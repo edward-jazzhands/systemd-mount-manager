@@ -10,3 +10,7 @@ if [ ! -d /run/systemd/system ]; then
     echo "systemd-mount-manager requires systemd to function."
     exit 1
 fi
+
+
+# fix me
+# install -D -m 644 data/com.yourname.mountmanager.policy %{buildroot}/usr/share/polkit-1/actions/
