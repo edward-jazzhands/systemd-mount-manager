@@ -1,0 +1,19 @@
+#!/bin/bash
+set -e
+
+if ! command -v systemctl &> /dev/null; then
+    echo "ERROR: systemd is not installed or not running on this system."
+    echo "systemd-mount-manager requires systemd to function."
+    echo "Installation aborted."
+    exit 1
+fi
+
+# Additional check: verify systemd is actually the init system
+if [ ! -d /run/systemd/system ]; then
+    echo "ERROR: systemd is not the active init system on this system."
+    echo "systemd-mount-manager requires systemd to function."
+    echo "Installation aborted."
+    exit 1
+fi
+
+exit 0
