@@ -1,15 +1,5 @@
 from __future__ import annotations
-from importlib.util import find_spec
 import sys
-
-# if sys.base_prefix != sys.prefix:  # We're in a venv
-# NOTE: I believe the above check is not logically necessary.
-# We can just do the safe check for `gi` regardless of the venv.
-if not find_spec("gi"):
-    print("Warning: PyGObject not found. Did you use --system-site-packages?")
-    sys.exit(1)
-
-import gi
 from typing import Sequence
 import subprocess
 from pathlib import Path
@@ -21,6 +11,7 @@ class Color:
     YELLOW = "\033[1;33m"
     BLUE = "\033[0;36m"
     GRAY = "\033[1;30m"
+    ORANGE = "\033[0;33m"
     NC = "\033[0m"  # No Color
 
 
@@ -207,6 +198,7 @@ class Troubleshooter:
             return e
         else:
             if display_output:
+                print(f"{Color.YELLOW}Command input:{Color.ORANGE} {cmd}{Color.NC}")
                 if result.stdout:
                     print(
                         f"{Color.YELLOW}Command output:{Color.GRAY} {result.stdout.strip()}{Color.NC}"
@@ -335,20 +327,46 @@ class Troubleshooter:
             print(f"{Color.YELLOW}    Tailscale is NOT connected{Color.NC}")
             self.problems_found.append(("Tailscale is NOT connected", 4))
             return
+        
+        # Tailscale is connected, check if destination is also connected:
+        output = tailscale_status.stdout.strip().split("\n")
+        found_smb_server = False
+        smb_server_online = False
+        for line in output:
+            if SMB_SERVER in line:
+                found_smb_server = True
+                if "offline" not in line:
+                    smb_server_online = True
+                    
+        self.print_status(found_smb_server, "Tailscaled says your SMB server exists in your tailnet?")
+        if not found_smb_server:
+            print(f"{Color.YELLOW}    Tailscaled says {SMB_SERVER} does NOT exist in your tailnet{Color.NC}")
+            self.problems_found.append((f"Tailscaled says {SMB_SERVER} does NOT exist in your tailnet", 4))
+            
+        self.print_status(smb_server_online, "Tailscaled says your SMB server is online?")
+        if not smb_server_online:
+            print(f"{Color.YELLOW}    Tailscaled says {SMB_SERVER} is offline{Color.NC}")
+            self.problems_found.append((f"Tailscaled says {SMB_SERVER} is offline", 4))
 
     def check_mount_point(self) -> None:
         """[5] Check if mount point directory exists"""
         print(f"\n{Color.BLUE}[5] Checking mount point directory...{Color.NC}")
 
-        mount_path = Path(MOUNT_POINT)
-        exists = mount_path.exists() and mount_path.is_dir()
 
-        self.print_status(exists, f"Mount point directory exists?: {MOUNT_POINT}")
-        if not exists:
-            print(f"{Color.YELLOW}    Run: sudo mkdir -p {MOUNT_POINT}{Color.NC}")
-            self.problems_found.append(
-                (f"Mount point directory does NOT exist: {MOUNT_POINT}", 5)
-            )
+        try:
+            mount_path = Path(MOUNT_POINT)
+            exists = mount_path.exists() and mount_path.is_dir()
+        except Exception as e:
+            print(f"{Color.RED}EXCEPTION{Color.NC}: {e}")
+            self.problems_found.append((f"Error: {e}", 5))
+            return
+        else:
+            self.print_status(exists, f"Mount point directory exists?: {MOUNT_POINT}")
+            if not exists:
+                print(f"{Color.YELLOW}    Run: sudo mkdir -p {MOUNT_POINT}{Color.NC}")
+                self.problems_found.append(
+                    (f"Mount point directory does NOT exist: {MOUNT_POINT}", 5)
+                )
 
     def check_credentials(self) -> None:
         """[6] Check credentials file"""
