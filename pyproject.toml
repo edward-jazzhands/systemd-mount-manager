@@ -4,12 +4,73 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = "~=3.12.0"
+authors = [
+    { name = "edward-jazzhands", email = "ed.jazzhands@gmail.com" }
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+keywords = ["python", "textual", "tui", "cookbook"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+]
+
 dependencies = [
     "click==8.1.6",
     "textual>=6.11.0",
 ]
 
+
+[project.urls]
+Repository = "https://github.com/edward-jazzhands/systemd-mount-manager"
+Changelog = "https://github.com/edward-jazzhands/systemd-mount-manager/blob/master/CHANGELOG.md"
+
+[build-system]
+requires = ["uv_build>=0.8.0,<0.9"]
+build-backend = "uv_build"
+
+[project.scripts]
+systemd-mount-manager = "systemd_mount_manager.main:main"
+
+##########################
+# Dev Dependency Configs #
+##########################
+
 [dependency-groups]
 dev = [
+    "basedpyright>=1.31.0",
+    "black>=25.1.0",
+    "mypy>=1.17.1",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "pytest-html>=4.1.1",
+    "pytest-textual-snapshot>=1.1.0",
+    "pytest-json-report>=1.5.0",
+    "ruff>=0.12.7",
     "textual-dev>=1.8.0",
+    "tomli>=2.2.1",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.black]
+line-length = 100
+
+[tool.mypy]
+pretty = true
+# strict = true
+disallow_untyped_defs = true
+disallow_untyped_calls = true
+
+[tool.basedpyright]
+include = ["src"]
+typeCheckingMode = "strict"
+

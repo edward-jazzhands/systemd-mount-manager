@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Textual stuff
+snapshot_report.html
+error.*
+
+# Virtual environments
+.venv
+
+# tooling stuff
+*_cache/
+.nox/
+.vscode/
+
+# OS-generated files
+.DS_Store
+[Tt]humbs.db
