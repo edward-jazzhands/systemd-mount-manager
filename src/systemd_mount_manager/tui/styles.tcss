@@ -1,26 +1,98 @@
 CustomHeader {
-    height: 4;
+    height: 3;
     background: $surface;
-    padding: 0 1;
+    # padding: 0 1;
     border-bottom: hkey $panel;
     box-sizing: border-box;
     margin: 0 0 1 0;
 }
 
-#ascii_banner {
-    width: 1fr;
+TabbedContent {
+    # border: outer green;
+    height: 1fr;
 }
 
-# #header_info {
-#     border-left: vkey red;
-#     # height: 3;
-# }
+#ascii_banner {
+    min-width: 83;
+    width: auto;
+
+}
+
+#header_info {
+    align: right top;
+    padding: 0 1;
+    & > Static {
+        width: auto;
+    }
+}
 
 # #main_tabs {
 #     height: 10;
 # }
 
-Placeholder {
-    height: 1fr;
+# Placeholder {
+#     height: 1fr;
+#     # border: solid red;
+# }
+
+.content-container {
+    padding: 0;
+}
+
+ManagedMounts {
+    margin: 1 3;
+    padding: 0 1;
+    border: outer $panel;
+    height: auto;
+    background: $surface;
+}
+
+
+ManagedMountHeader, DiscoveredMountHeader {
+    height: 3;
+    # background: green;
+}
+
+#mount-col-names {
+    height: 1;
+    margin: 1 0 0 0;
+    # width: 40;
     # border: solid red;
+    # background: red;
+}
+
+
+ManagedMount {
+    height: 3;
+    margin: 1 0;
+    background: $surface-lighten-1;
+    border: hkey $panel-lighten-1;
+    # border-left: outer red;
+}
+
+.mount-data-box {
+    width: 1fr;
+    padding: 0 1;
+    # background: blue;
+}
+# .share_name
+# .share_target
+# .share_type
+# .share_status
+
+
+DiscoveredMounts {
+    margin: 1 3;
+    padding: 0 1;
+    border: outer $panel;
+    height: auto;
+    background: $surface;
+}
+
+DiscoveredMount {
+    height: 3;
+    margin: 1 0;
+    background: $surface-lighten-1;
+    border: hkey $panel-lighten-1;
+    # border-left: outer red;
 }

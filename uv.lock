@@ -245,6 +245,9 @@ wheels = [
 linkify = [
     { name = "linkify-it-py" },
 ]
+plugins = [
+    { name = "mdit-py-plugins" },
+]
 
 [[package]]
 name = "markupsafe"
@@ -619,7 +622,7 @@ dev = [
 requires-dist = [
     { name = "click", specifier = "==8.1.6" },
     { name = "ezpubsub", specifier = ">=0.3.0" },
-    { name = "textual", specifier = ">=6.11.0" },
+    { name = "textual", specifier = ">=5.0.0,<6.0.0" },
     { name = "textual-slidecontainer", specifier = ">=0.6.0" },
 ]
 
@@ -640,19 +643,18 @@ dev = [
 
 [[package]]
 name = "textual"
-version = "6.11.0"
+version = "5.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "markdown-it-py", extra = ["linkify"] },
-    { name = "mdit-py-plugins" },
+    { name = "markdown-it-py", extra = ["linkify", "plugins"] },
     { name = "platformdirs" },
     { name = "pygments" },
     { name = "rich" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/55/06/906f86bbc59ec7cd3fb424250e19ce670406d1f28e49e86c2221e9fd7ed2/textual-6.11.0.tar.gz", hash = "sha256:08237ebda0cfbbfd1a4e2fd3039882b35894a73994f6f0fcc12c5b0d78acf3cc", size = 1584292 }
+sdist = { url = "https://files.pythonhosted.org/packages/ba/ce/f0f938d33d9bebbf8629e0020be00c560ddfa90a23ebe727c2e5aa3f30cf/textual-5.3.0.tar.gz", hash = "sha256:1b6128b339adef2e298cc23ab4777180443240ece5c232f29b22960efd658d4d", size = 1557651 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b5/fc/5e2988590ff2e0128eea6446806c904445a44e17256c67141573ea16b5a5/textual-6.11.0-py3-none-any.whl", hash = "sha256:9e663b73ed37123a9b13c16a0c85e09ef917a4cfded97814361ed5cccfa40f89", size = 714886 },
+    { url = "https://files.pythonhosted.org/packages/00/2f/f7c8a533bee50fbf5bb37ffc1621e7b2cdd8c9a6301fc51faa35fa50b09d/textual-5.3.0-py3-none-any.whl", hash = "sha256:02a6abc065514c4e21f94e79aaecea1f78a28a85d11d7bfc64abf3392d399890", size = 702671 },
 ]
 
 [[package]]

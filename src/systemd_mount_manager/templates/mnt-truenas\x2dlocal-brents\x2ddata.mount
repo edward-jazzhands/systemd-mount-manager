@@ -1,0 +1,13 @@
+[Unit]
+Description=TrueNAS SMB over Local Network
+After=network-online.target
+
+[Mount]
+What=//truenas.local/brents-data
+Where=/mnt/truenas-local/brents-data
+Type=cifs
+Options=credentials=/etc/smb-creds,vers=3.0,uid=1000,gid=1000,_netdev
+TimeoutSec=30
+
+[Install]
+WantedBy=remote-fs.target

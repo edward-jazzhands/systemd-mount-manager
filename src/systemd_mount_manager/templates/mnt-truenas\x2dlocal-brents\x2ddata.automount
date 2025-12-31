@@ -1,0 +1,9 @@
+[Unit]
+Description=Automount TrueNAS SMB over Local Network
+
+[Automount]
+Where=/mnt/truenas-local/brents-data
+TimeoutIdleSec=300
+
+[Install]
+WantedBy=multi-user.target

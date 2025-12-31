@@ -1,0 +1,9 @@
+[Unit]
+Description=Automount TrueNAS SMB over Tailscale
+
+[Automount]
+Where=/mnt/truenas-tailnet/brents-data
+TimeoutIdleSec=300
+
+[Install]
+WantedBy=multi-user.target

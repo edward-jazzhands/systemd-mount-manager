@@ -33,11 +33,20 @@ from systemd_mount_manager.tui.settings import SettingsTab
 
 
 header_ascii = r"""
-|  | |==   /\   |=\  |== |= \ 
-|--| |--  /__\  |- | |-- |_ /
-|  | |__ /    \ |-/  |__ |  \
+╔═╗╦ ╦╔═╗╔╦╗╔═╗╔╦╗╔╦╗  ╔╦╗╔═╗╦ ╦╔╗╔╔╦╗  ╔╦╗╔═╗╔╗╔╔═╗╔═╗╔═╗╦═╗
+╚═╗╚╦╝╚═╗ ║ ║╣ ║║║ ║║  ║║║║ ║║ ║║║║ ║   ║║║╠═╣║║║╠═╣║ ╦║╣ ╠╦╝
+╚═╝ ╩ ╚═╝ ╩ ╚═╝╩ ╩═╩╝  ╩ ╩╚═╝╚═╝╝╚╝ ╩   ╩ ╩╩ ╩╝╚╝╩ ╩╚═╝╚═╝╩╚═
+"""
+header_ascii2 = r"""
+┌─┐┬ ┬┌─┐┌┬┐┌─┐┌┬┐┌┬┐  ┌┬┐┌─┐┬ ┬┌┐┌┌┬┐  ┌┬┐┌─┐┌┐┌┌─┐┌─┐┌─┐┬─┐
+└─┐└┬┘└─┐ │ ├┤ │││ ││  ││││ ││ ││││ │   │││├─┤│││├─┤│ ┬├┤ ├┬┘
+└─┘ ┴ └─┘ ┴ └─┘┴ ┴─┴┘  ┴ ┴└─┘└─┘┘└┘ ┴   ┴ ┴┴ ┴┘└┘┴ ┴└─┘└─┘┴└─
 """
 
+header_ascii3 = r"""
+█▀ █▄█ █▀ ▀█▀ ██▀ █▄░▄█ ▄▄█  █▄░▄█ █▀█ █░█ █▄░█ ▀█▀  █▄░▄█ ▄▀█ █▄░█ ▄▀█ ▄▀░ █▀▀ █▀▄
+▄█ ░█░ ▄█ ░█░ █▄▄ █░▀░█ █▄█  █░▀░█ █▄█ █▄█ █░▀█ ░█░  █░▀░█ █▀█ █░▀█ █▀█ ▀▄█ ██▄ █▀▄
+"""
 class CustomHeader(Container):
     
     def __init__(self, app_data: AppData):
@@ -46,7 +55,7 @@ class CustomHeader(Container):
     
     def compose(self) -> ComposeResult:
         with Horizontal():
-            yield Static(header_ascii.strip(), id="ascii_banner")
+            yield Static(header_ascii3.strip(), id="ascii_banner")
             with Container(id="header_info"):
                 yield Static(f"Dev Mode: {self.app_data.dev_mode}")
                 yield Static(f"Fallback: {self.app_data.fallback}")

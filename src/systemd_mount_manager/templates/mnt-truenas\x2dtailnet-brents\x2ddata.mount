@@ -1,0 +1,14 @@
+[Unit]
+Description=TrueNAS SMB over Tailscale
+Requires=tailscaled.service
+After=tailscaled.service network-online.target
+
+[Mount]
+What=//truenas-scale/brents-data
+Where=/mnt/truenas-tailnet/brents-data
+Type=cifs
+Options=credentials=/etc/smb-creds,vers=3.0,uid=1000,gid=1000,_netdev
+TimeoutSec=30
+
+[Install]
+WantedBy=remote-fs.target
