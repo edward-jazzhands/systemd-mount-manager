@@ -1,6 +1,8 @@
+list-tasks:
+  just --list
 
 # Install the package
-setup:
+install:
     #!/usr/bin/env bash
     ./setup-scripts/install-deps.sh
     uv venv --python-preference only-system --system-site-packages
@@ -8,15 +10,19 @@ setup:
 
 # Run the original bash script
 run-orig:
-    uv run src/systemd-mount-manager/original.py
+    uv run src/systemd_mount_manager/original.py
 
 # Run the CLI, passing through any flags
 run flags='':
 	uv run systemd-mount-manager {{flags}}
 
-# Run in dev mode
-run-dev:
-	uv run textual run --dev src/systemd_mount_manager/main.py
+# Runs the TUI in development mode
+run-tui:
+	uv run textual run --dev src/systemd_mount_manager/tui/main.py
+
+# Runs the GUI in development mode
+run-gui:
+  uv run systemd-mount-manager --gui
 
 # Run the console
 console:

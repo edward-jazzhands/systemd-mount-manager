@@ -16,7 +16,7 @@ error.*
 # tooling stuff
 *_cache/
 .nox/
-.vscode/
+# .vscode/
 
 # OS-generated files
 .DS_Store

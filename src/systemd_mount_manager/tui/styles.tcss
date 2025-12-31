@@ -1,0 +1,26 @@
+CustomHeader {
+    height: 4;
+    background: $surface;
+    padding: 0 1;
+    border-bottom: hkey $panel;
+    box-sizing: border-box;
+    margin: 0 0 1 0;
+}
+
+#ascii_banner {
+    width: 1fr;
+}
+
+# #header_info {
+#     border-left: vkey red;
+#     # height: 3;
+# }
+
+# #main_tabs {
+#     height: 10;
+# }
+
+Placeholder {
+    height: 1fr;
+    # border: solid red;
+}
