@@ -55,17 +55,36 @@ class ManagedMount(Horizontal):
 
 class ManagedMountHeader(Container):
     def compose(self) -> ComposeResult:
-        yield Static("Managed Mounts")
+        with Horizontal():
+            yield Static("Managed Mounts", classes="compact-static")
+            yield Container()
+            yield Button("Button 1", id="button1", compact=True)
+            yield Button("Button 2", id="button2", compact=True)
+            yield Button("Button 3", id="button3", compact=True)        
+        
         with Horizontal(id="mount-col-names"):
             yield Static("Name", classes="mount-data-box")
             yield Static("Target", classes="mount-data-box")
             yield Static("Type", classes="mount-data-box")
             yield Static("Status", classes="mount-data-box")
+            
 
+        
+    @on(Button.Pressed, "#button1")
+    def button1_pressed(self) -> None:
+        self.notify("button1_pressed")
+        
+    @on(Button.Pressed, "#button2")
+    def button2_pressed(self) -> None:
+        self.notify("button2_pressed")
+        
+    @on(Button.Pressed, "#button3")
+    def button3_pressed(self) -> None:
+        self.notify("button3_pressed")
 
 class ManagedMounts(Container):
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(classes="card-container")
         self.share_mounts: list[ManagedMount] = []
 
         # Dummy Data
@@ -132,38 +151,12 @@ class DiscoveredMountHeader(Horizontal):
     @on(Button.Pressed, "#button3")
     def button3_pressed(self) -> None:
         self.notify("button3_pressed")
-        
-        # with Horizontal(id="mount-col-names"):
-        #     yield Static("Name", classes="mount-data-box")
-        #     yield Static("Target", classes="mount-data-box")
-        #     yield Static("Type", classes="mount-data-box")
-        #     yield Static("Status", classes="mount-data-box")
 
 
 class DiscoveredMounts(Container):
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(classes="card-container")
         self.share_mounts: list[DiscoveredMount] = []
-
-        # # Dummy Data
-        # self.share_mounts.append(DiscoveredMount(
-        #     "Discovered Share 1",
-        #     "//discovered-share/data",
-        #     ShareType.SMB,
-        #     ShareStatus.CONNECTED
-        # ))
-        # self.share_mounts.append(DiscoveredMount(
-        #     "Discovered Share 2",
-        #     "//discovered-share2/data",
-        #     ShareType.NFS,
-        #     ShareStatus.IDLE
-        # ))
-        # self.share_mounts.append(DiscoveredMount(
-        #     "Discovered Share 3",
-        #     "//discovered-share3/data",
-        #     ShareType.SMB,
-        #     ShareStatus.FAILED
-        # ))
 
     def compose(self) -> ComposeResult:
         self.table = DataTable[str](id="existing-mounts-table")
@@ -172,6 +165,7 @@ class DiscoveredMounts(Container):
         self.table.add_column("Active", key="active")
         self.table.add_column("Sub", key="sub")
         self.table.add_column("Description", key="description")
+        self.table.cursor_type = "row"
 
         yield DiscoveredMountHeader()
         yield self.table
@@ -180,10 +174,9 @@ class DiscoveredMounts(Container):
         #     yield item
 
     def on_mount(self):
-        # existing is a list of NamedTuples
-        existing = detect_exising_mounts()
-        # add_rows takes an iterable of iterables
-        self.table.add_rows(existing)
+        
+        existing = detect_exising_mounts() #    existing is a list of NamedTuples     
+        self.table.add_rows(existing) #     add_rows takes an iterable of iterables
 
 
 class DashBoard(TabPane):

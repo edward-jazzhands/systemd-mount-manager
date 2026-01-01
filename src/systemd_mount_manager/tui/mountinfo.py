@@ -11,6 +11,7 @@ from __future__ import annotations
 # from textual import on  # , log
 from textual.app import ComposeResult
 from textual.widgets import TabPane, Placeholder
+from textual.containers import Container, Horizontal, ScrollableContainer
 from textual.binding import Binding
 from textual.widgets import Static, Switch  # , Button, Select
 
@@ -21,4 +22,5 @@ from textual.widgets import Static, Switch  # , Button, Select
 class MountInfoTab(TabPane):
     
     def compose(self) -> ComposeResult:
-        yield Placeholder("Mount Info placeholder")
+        with ScrollableContainer(classes="content-container"):
+            yield Container(classes="card-container")

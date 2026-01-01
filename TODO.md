@@ -11,6 +11,7 @@ Main goals::
 [-] User can choose their own directory for managed mount files
 [-] Detect if managed mount dir is a git repo
 [-] Offer simple git controls to user in the UI
+[-] Sudo functions in logic module, enter password in UI popup
 
 TUI mode:
 [-] Main screen - list of mounts with active/inactive status
@@ -23,3 +24,6 @@ TUI mode:
 
 GUI mode:
 [-] blah
+
+Settings:
+[-] Managed Mounts Directory (default ~/.config/systemd-mount-manager/managed-mounts)

@@ -1,3 +1,14 @@
+# THIS CHANGES THE DEFAULT TEXTUAL STYLES FOR ALL STATICS.
+# Not the default for some reason.
+Static {
+    width: auto;
+}
+
+.compact-static {
+    width: auto;
+    padding: 0 1;
+}
+
 CustomHeader {
     height: 3;
     background: $surface;
@@ -5,47 +16,30 @@ CustomHeader {
     border-bottom: hkey $panel;
     box-sizing: border-box;
     margin: 0 0 1 0;
+    #ascii_banner {
+        min-width: 83;
+        width: auto;
+    }
+    #header_info {
+        # background: blue;
+        align: right top;
+        padding: 0 1;
+        & > Static {
+            width: auto;
+        }
+    }
 }
-
-# THIS CHANGES THE DEFAULT TEXTUAL STYLES FOR ALL STATICS.
-# Not the default for some reason.
-# Static {
-#     width: auto;
-# }
 
 TabbedContent {
     # border: outer green;
     height: 1fr;
-}
-
-#ascii_banner {
-    min-width: 83;
-    width: auto;
-
-}
-
-#header_info {
-    align: right top;
-    padding: 0 1;
-    & > Static {
-        width: auto;
+    .content-container {
+        padding: 0;
+        # background: blue;
     }
 }
 
-# #main_tabs {
-#     height: 10;
-# }
-
-# Placeholder {
-#     height: 1fr;
-#     # border: solid red;
-# }
-
-.content-container {
-    padding: 0;
-}
-
-ManagedMounts {
+.card-container {
     margin: 1 3;
     padding: 0 1;
     border: outer $panel;
@@ -53,33 +47,9 @@ ManagedMounts {
     background: $surface;
 }
 
-
 ManagedMountHeader {
     height: 3;
-    # background: green;
 }
-
-DiscoveredMountHeader {
-    height: 2;
-}
-
-#mount-col-names {
-    height: 1;
-    margin: 1 0 0 0;
-    # width: 40;
-    # border: solid red;
-    # background: red;
-}
-
-.compact-static {
-    width: auto;
-    padding: 0 1;
-
-}
-
-# .filler {
-#     width: 1fr;
-# }
 
 ManagedMount {
     height: 3;
@@ -94,24 +64,23 @@ ManagedMount {
     padding: 0 1;
     # background: blue;
 }
-# .share_name
-# .share_target
-# .share_type
-# .share_status
 
-
-DiscoveredMounts {
-    margin: 1 3;
-    padding: 0 1;
-    border: outer $panel;
-    height: auto;
-    background: $surface;
+#mount-col-names {
+    height: 1;
+    margin: 1 0 0 0;
 }
 
-DiscoveredMount {
+DiscoveredMountHeader {
+    height: 2;
+}
+
+SettingOption {
     height: 3;
-    margin: 1 0;
-    background: $surface-lighten-1;
-    border: hkey $panel-lighten-1;
-    # border-left: outer red;
+    Static {
+        padding: 0 2;
+    }
 }
+# #settings-container {
+#     layout: grid;
+#     grid-size: 2 1;
+# }

@@ -63,6 +63,18 @@ class MountPayload:
     wanted_by: str
 
 
+def check_sudo_cached() -> bool:
+    """Check if sudo credentials are already cached
+    Returns:
+        bool: True if sudo is cached, False if not
+    """
+    result = subprocess.run(
+        ['sudo', '-n', 'true'],  # -n means non-interactive
+        capture_output=True
+    )
+    return result.returncode == 0
+
+
 def run_command(
     cmd: Sequence[str],
 ) -> subprocess.CompletedProcess[str]:
@@ -72,6 +84,49 @@ def run_command(
         return result
     except Exception as e:
         raise e
+
+    
+def run_command_with_sudo(command: str) -> subprocess.CompletedProcess[str] | None:
+    """
+    Args:
+        command (str): The command to run with sudo.
+    Returns:
+        subprocess.CompletedProcess[str] | None: The result of the command, or 
+        None if sudo is not cached.
+    Raises:
+        PermissionError: If sudo is not cached.
+    """
+    
+    if not check_sudo_cached():
+        raise PermissionError("sudo credentials not cached")
+
+    process = subprocess.run(
+        ['sudo', '-S', 'bash', '-c', command],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    
+    return process
+        
+    
+def input_sudo_password(password: str) -> bool:
+    """Authenticate with sudo and cache credentials.
+    
+    Returns:
+        bool: True if authentication succeeded, False if password was wrong
+    """
+    process = subprocess.Popen(
+        ['sudo', '-S', 'true'],  # Simpler test command
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    
+    process.communicate(input=password + '\n')
+    return process.returncode == 0    
 
 
 class SystemctlListUnitsLine(NamedTuple):
