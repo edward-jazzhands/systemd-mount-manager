@@ -7,6 +7,12 @@ CustomHeader {
     margin: 0 0 1 0;
 }
 
+# THIS CHANGES THE DEFAULT TEXTUAL STYLES FOR ALL STATICS.
+# Not the default for some reason.
+# Static {
+#     width: auto;
+# }
+
 TabbedContent {
     # border: outer green;
     height: 1fr;
@@ -48,9 +54,13 @@ ManagedMounts {
 }
 
 
-ManagedMountHeader, DiscoveredMountHeader {
+ManagedMountHeader {
     height: 3;
     # background: green;
+}
+
+DiscoveredMountHeader {
+    height: 2;
 }
 
 #mount-col-names {
@@ -61,6 +71,15 @@ ManagedMountHeader, DiscoveredMountHeader {
     # background: red;
 }
 
+.compact-static {
+    width: auto;
+    padding: 0 1;
+
+}
+
+# .filler {
+#     width: 1fr;
+# }
 
 ManagedMount {
     height: 3;

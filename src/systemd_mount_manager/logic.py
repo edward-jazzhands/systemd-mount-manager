@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 # import sys
-from typing import Sequence
+from typing import Sequence, NamedTuple
 import subprocess
 # import os
 from pathlib import Path
@@ -72,6 +72,60 @@ def run_command(
         return result
     except Exception as e:
         raise e
+
+
+class SystemctlListUnitsLine(NamedTuple):
+    """
+    Args:
+        unit: The unit name.
+        load: Reflects whether the unit definition was properly loaded.
+        active: The high-level unit activation state, i.e. generalization of SUB.
+        sub: The low-level unit activation state, values depend on unit type.
+        description: Unit description.
+    """
+    unit: str
+    load: str
+    active: str
+    sub: str
+    description: str
+
+
+def detect_exising_mounts() -> list[SystemctlListUnitsLine]:
+    
+    # First hit systemctl, get giant string returned
+    result = run_command(["systemctl", "list-units", "--type=mount", "--all", "--no-legend"])
+    
+    # Now normalize the data by converting each line to a SystemctlListUnitsLine obj
+    mounts_list_normalized: list[SystemctlListUnitsLine] = []
+    for line in result.stdout.splitlines():
+        lines_split = line.split()
+        if lines_split[0] == "●":
+            lines_split.pop(0)
+        mounts_list_normalized.append(
+            SystemctlListUnitsLine(
+                unit=lines_split[0],
+                load=lines_split[1],
+                active=lines_split[2],
+                sub=lines_split[3],
+                description=lines_split[4]
+            )
+        )
+    
+    return mounts_list_normalized
+        
+    
+    # unit_name = line.split()[0]
+    # fragment = run_command(["systemctl", "show", "-p", "FragmentPath", unit_name])
+    # if str(MANAGED_MOUNTS_DIR) in fragment.stdout:
+    #     # Your mount
+    #     pass
+    # elif "/run/systemd/generator/" in fragment.stdout:
+    #     # fstab mount
+    #     pass
+    # elif not fragment.stdout.strip().split("=")[1]:
+    #     # transient mount
+    #     pass
+
 
 
 def create_mount_file(mount_payload: MountPayload) -> str:
