@@ -11,18 +11,31 @@ _executor = concurrent.futures.ThreadPoolExecutor()
 
 def run_in_thread_executor(fn: Callable[P, R]) -> Callable[P, concurrent.futures.Future[R]]:
     """Synchronous: returns concurrent.futures.Future[R].
-    Note that generally speaking there's no practical reason you would use this.
-    that I am aware of. It's here for reference."""
-
+    You use concurrent.futures.Future when:
+    - Your program is fundamentally synchronous
+    - You want background work without committing to asyncio
+    - Blocking is acceptable at explicit points
+    - You're writing libraries that shouldn't force asyncio on users
+    """
     @functools.wraps(fn)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> concurrent.futures.Future[R]:
         return _executor.submit(fn, *args, **kwargs)
+    
+    # submit() returns a concurrent.futures.Future object. These
+    # cannot be awaited with the async/await syntax. Generally, the common
+    # pattern is to get the result by scheduling a callback using the
+    # add_done_callback method (shown below). But in some cases you may
+    # just store the future and check the result later. Its open ended.
 
     return wrapper
 
 
 def run_in_thread_awaitable(fn: Callable[P, R]) -> Callable[P, Awaitable[R]]:
-    """Async-friendly: returns an awaitable."""
+    """Async-friendly: returns an awaitable.
+    You use Awaitable / asyncio Futures when you already have an event loop.
+    If there is an asyncio loop in the current thread, we must provide
+    an asyncio awaitable in order to allow the existing loop to await the result.
+"""
 
     @functools.wraps(fn)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -31,6 +44,11 @@ def run_in_thread_awaitable(fn: Callable[P, R]) -> Callable[P, Awaitable[R]]:
         return await loop.run_in_executor(
             _executor, functools.partial(fn, *args, **kwargs)
         )
+        # get_running_loop is the new way to get the current loop.
+        # It is preferred over get_event_loop for modern python.
+        # run_in_executor returns an asyncio.Future, which is an awaitable
+        # (specifically an asyncio Future bound to the current loop, not a
+        # generic awaitable. This might matter if there's multiple loops).
 
     return wrapper
 
@@ -45,15 +63,18 @@ if __name__ == "__main__":
         return sum(i * i for i in range(n))
 
     f = blocking_work(10_000_000)
-    result = f.result()  # blocks here until done
     
-    # Note that as stated above, since this blocks thread it is called in, there's
-    # no practical reason to use it at all. You need the async extension to
-    # get the practical benefit.
-    # Remember even with the async extension, Python is still inherently
-    # single-threaded due to being GIL locked (unless using the new
-    # 3.13t build). Doing CPU-blocking work in an async context
-    # will only give marginal benefits to app latency.
+    # Generally speaking you want to avoid using the f.result() method.
+    # It blocks the thread it is called in until the result is ready.
+    # The typical design pattern is to schedule a callback using the
+    # add_done_callback method.
+    
+    f.add_done_callback(lambda x: print(x.result()))
+    
+    # The function passed to the callback runs in the thread that completes 
+    # the future (That's usually the thread doing the work but not always).
+    # You must treat it as an arbitrary background thread and avoid touching 
+    # shared mutable state. Always best to use pure functions without side effects.
 
     # ===============================#
     # Test #2: Async
@@ -66,3 +87,12 @@ if __name__ == "__main__":
     async def main() -> None:
         text = await blocking_io("/some/huge/file")
         print(len(text))
+        
+        # Now since blocking_io returns an awaitable, asyncio can treat
+        # it as a coroutine and await it. Asyncio doesn't care how the work gets
+        # done, it just sees an awaitable.
+
+
+# NOTE: executor has no shutdown path. In long-running apps (GUIs, TUIs, servers) 
+# that’s fine. In short scripts or tests, Python will clean it up on exit, but 
+# explicitly shutting it down on program exit is cleaner.

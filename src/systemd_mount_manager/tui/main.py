@@ -29,6 +29,7 @@ from systemd_mount_manager.tui.addmount import AddMountTab
 from systemd_mount_manager.tui.mountinfo import MountInfoTab
 from systemd_mount_manager.tui.troubleshooter import Troubleshooter
 from systemd_mount_manager.tui.settings import SettingsTab
+from systemd_mount_manager.tui.fstab import FstabTab
 
 
 header_ascii3 = r"""
@@ -59,7 +60,7 @@ class AppData:
 class TextualApp(App[None]):
 
     BINDINGS = [
-        Binding("f1", "show_help", "Show help"),
+        Binding("f3", "show_help", "Show help"),
     ]
 
     CSS_PATH = "styles.tcss"
@@ -81,9 +82,10 @@ class TextualApp(App[None]):
             yield CustomHeader(app_data=self.app_data)
             with TabbedContent(id="main_tabs"):
                 yield DashBoard("Dashboard")
-                yield Troubleshooter("Troubleshooter")
+                yield FstabTab("fstab")
                 yield AddMountTab("Add Mount")
                 yield MountInfoTab("Mount Info")
+                yield Troubleshooter("Troubleshooter")
                 yield SettingsTab("Settings")
         yield Footer()
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 # import sys
 from typing import Sequence, NamedTuple
 import subprocess
+
 # import os
 from pathlib import Path
 from dataclasses import dataclass
@@ -12,7 +13,6 @@ from textwrap import dedent
 
 # Third party
 # from ezpubsub import Signal, SignalError
-
 
 
 # Configuration
@@ -69,64 +69,71 @@ def check_sudo_cached() -> bool:
         bool: True if sudo is cached, False if not
     """
     result = subprocess.run(
-        ['sudo', '-n', 'true'],  # -n means non-interactive
-        capture_output=True
+        ["sudo", "-n", "true"],  # -n means non-interactive
+        capture_output=True,
     )
     return result.returncode == 0
 
 
-def run_command(
-    cmd: Sequence[str],
-) -> subprocess.CompletedProcess[str]:
-
+def run_command(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return result
     except Exception as e:
         raise e
 
-    
-def run_command_with_sudo(command: str) -> subprocess.CompletedProcess[str] | None:
+
+def run_command_with_sudo(command: str) -> subprocess.CompletedProcess[str]:
     """
     Args:
         command (str): The command to run with sudo.
     Returns:
-        subprocess.CompletedProcess[str] | None: The result of the command, or 
+        subprocess.CompletedProcess[str] | None: The result of the command, or
         None if sudo is not cached.
     Raises:
         PermissionError: If sudo is not cached.
     """
-    
+
     if not check_sudo_cached():
         raise PermissionError("sudo credentials not cached")
 
     process = subprocess.run(
-        ['sudo', '-S', 'bash', '-c', command],
+        ["sudo", "-S", "bash", "-c", command],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True
+        text=True,
     )
-    
+
     return process
-        
-    
-def input_sudo_password(password: str) -> bool:
+
+
+def input_sudo_password(password: str) -> tuple[bool, str]:
     """Authenticate with sudo and cache credentials.
-    
+
     Returns:
-        bool: True if authentication succeeded, False if password was wrong
+        tuple[bool, str]: (success, error_message)
     """
     process = subprocess.Popen(
-        ['sudo', '-S', 'true'],  # Simpler test command
+        ["sudo", "-S", "true"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True
+        text=True,
     )
+
+    _, stderr = process.communicate(input=password + "\n")
     
-    process.communicate(input=password + '\n')
-    return process.returncode == 0    
+    if process.returncode == 0:
+        return True, ""
+    
+    # Parse stderr for useful error messages
+    if "incorrect password" in stderr.lower():
+        return False, "Incorrect password"
+    elif "not in the sudoers file" in stderr.lower():
+        return False, "User not authorized for sudo"
+    else:
+        return False, stderr.strip()
 
 
 class SystemctlListUnitsLine(NamedTuple):
@@ -138,6 +145,7 @@ class SystemctlListUnitsLine(NamedTuple):
         sub: The low-level unit activation state, values depend on unit type.
         description: Unit description.
     """
+
     unit: str
     load: str
     active: str
@@ -146,10 +154,11 @@ class SystemctlListUnitsLine(NamedTuple):
 
 
 def detect_exising_mounts() -> list[SystemctlListUnitsLine]:
-    
     # First hit systemctl, get giant string returned
-    result = run_command(["systemctl", "list-units", "--type=mount", "--all", "--no-legend"])
-    
+    result = run_command(
+        ["systemctl", "list-units", "--type=mount", "--all", "--no-legend"]
+    )
+
     # Now normalize the data by converting each line to a SystemctlListUnitsLine obj
     mounts_list_normalized: list[SystemctlListUnitsLine] = []
     for line in result.stdout.splitlines():
@@ -162,13 +171,12 @@ def detect_exising_mounts() -> list[SystemctlListUnitsLine]:
                 load=lines_split[1],
                 active=lines_split[2],
                 sub=lines_split[3],
-                description=lines_split[4]
+                description=lines_split[4],
             )
         )
-    
+
     return mounts_list_normalized
-        
-    
+
     # unit_name = line.split()[0]
     # fragment = run_command(["systemctl", "show", "-p", "FragmentPath", unit_name])
     # if str(MANAGED_MOUNTS_DIR) in fragment.stdout:
@@ -182,7 +190,6 @@ def detect_exising_mounts() -> list[SystemctlListUnitsLine]:
     #     pass
 
 
-
 def create_mount_file(mount_payload: MountPayload) -> str:
     """
     Returns:
@@ -190,7 +197,7 @@ def create_mount_file(mount_payload: MountPayload) -> str:
     Raises:
         Exception: if error while creating the file
     """
-    
+
     mount_string = dedent(f"""\
         [Unit]
         Description={mount_payload.description}
@@ -227,18 +234,17 @@ def create_mount_file(mount_payload: MountPayload) -> str:
         output_path.write_text(mount_string)
     except OSError as e:
         raise RuntimeError(f"Failed to create mount file {output_path}: {e}") from e
-    
-    return mountfile_name
 
+    return mountfile_name
 
 
 def mount_at_boot(mount_unit: str, automount_unit: str) -> None:
     """Mount units must be pre-formatted with systemd-escape:
-    
+
     mount_unit = r"mnt-server\x2dtailnet-my\x2ddata.mount"
     automount_unit = r"mnt-server\x2dtailnet-my\x2ddata.automount"
     """
-    
+
     # First disable the lazy mount (This will delete the symlinks in /etc/systemd/system):
     run_command(["systemctl", "disable", str(automount_unit)])
 
@@ -248,16 +254,15 @@ def mount_at_boot(mount_unit: str, automount_unit: str) -> None:
 
     # Enable the .mount file
     run_command(["systemctl", "enable", str(mount_unit)])
-    
 
 
 def mount_lazily(mount_unit: str, automount_unit: str) -> None:
     """Mount units must be pre-formatted with systemd-escape:
-    
+
     mount_unit = r"mnt-server\x2dtailnet-my\x2ddata.mount"
     automount_unit = r"mnt-server\x2dtailnet-my\x2ddata.automount"
-    """    
-    
+    """
+
     # First disable mount at boot (This will delete the symlinks in /etc/systemd/system):
     run_command(["systemctl", "disable", str(mount_unit)])
 

@@ -68,8 +68,6 @@ class ManagedMountHeader(Container):
             yield Static("Type", classes="mount-data-box")
             yield Static("Status", classes="mount-data-box")
             
-
-        
     @on(Button.Pressed, "#button1")
     def button1_pressed(self) -> None:
         self.notify("button1_pressed")
@@ -105,7 +103,7 @@ class ManagedMounts(Container):
         )
 
     def compose(self) -> ComposeResult:
-        yield ManagedMountHeader()
+        yield ManagedMountHeader(classes="h3")
         for item in self.share_mounts:
             yield item
 
@@ -167,11 +165,8 @@ class DiscoveredMounts(Container):
         self.table.add_column("Description", key="description")
         self.table.cursor_type = "row"
 
-        yield DiscoveredMountHeader()
+        yield DiscoveredMountHeader(classes="h2")
         yield self.table
-
-        # for item in self.share_mounts:
-        #     yield item
 
     def on_mount(self):
         

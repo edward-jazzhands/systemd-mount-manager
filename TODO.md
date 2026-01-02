@@ -27,3 +27,23 @@ GUI mode:
 
 Settings:
 [-] Managed Mounts Directory (default ~/.config/systemd-mount-manager/managed-mounts)
+
+## Notes
+
+- Create credential files as root:root with 600 permissions
+- Name them by mount point or share for easy correlation (e.g., nas-media.cred)
+- Store a reference/mapping in your managed-mounts metadata so the tool knows which credential file belongs to which mount
+- Have the tool detect if a credential file is being used by multiple mounts and warn before deletion, or offer to update credentials across all mounts using that file (Scan your managed mount units for credentials= references when needed)
+- Delete references to password in the TUI and GUI apps immediately after getting sudo access in order to ensure the password is not stored in memory
+
+Example:
+
+```md
+Credential file 'nas-main.cred' already exists and is used by:
+  - /mnt/media (//nas.local/media)
+  - /mnt/backups (//nas.local/backups)
+  - /mnt/photos (//nas.local/photos)
+
+Overwriting will affect all these mounts.
+Continue? [y/N]
+```
