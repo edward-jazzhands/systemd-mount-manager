@@ -18,7 +18,7 @@ run flags='':
 
 # Runs the TUI in development mode
 run-tui:
-	uv run textual run --dev src/systemd_mount_manager/tui/main.py
+	uv run textual run --dev src/systemd_mount_manager/tui/tui_main.py
 
 # Runs the GUI in development mode
 run-gui:

@@ -3,12 +3,19 @@
     padding: 0 1;
 }
 
+Button {&:focus {text-style: none;}}
+
 .h1 { height: 1; }
 .h2 { height: 2; }
 .h3 { height: 3; }
 .h4 { height: 4; }
 .h5 { height: 5; }
+.h6 { height: 6; }
 .hauto { height: auto; }
+
+.center-middle {
+    align: center middle;
+}
 
 CustomHeader {
     height: 3;
@@ -72,19 +79,20 @@ ManagedMount {
 }
 
 SettingOption {
-    height: 3;
-    Static {
+    height: 6;
+    width: 1fr;
+    margin: 0 0 1 0;
+    # padding: 0 0 0 1;
+    background: $background-lighten-1;
+    border-left: outer $panel-lighten-2;
+    .setting-description { 
+        width: auto;
+        height: 3;
+        content-align: left middle;
         padding: 0 2;
     }
-}
-
-# #settings-container {
-#     layout: grid;
-#     grid-size: 2 1;
-# }
-
-HelpScreen {
-    align: center middle;
+    #setting-input { width: 1fr; }   
+    # setting-switch { background: green; }
 }
 
 #help-container {
@@ -103,3 +111,8 @@ FstabsCard {
         height: auto;
     }
 }   
+
+.save-cancel-buttons {
+    height: 3;
+    #save-button { margin: 0 1; }
+}

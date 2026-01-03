@@ -28,7 +28,7 @@ class HelpScreen(ModalScreen[None]):
     ]
 
     def __init__(self, anchor: str | None = None) -> None:
-        super().__init__()
+        super().__init__(classes="center-middle")
         self.anchor_line = anchor
 
     def compose(self) -> ComposeResult:

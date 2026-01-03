@@ -1,35 +1,61 @@
 # python standard lib
 from __future__ import annotations
 
-# import sys
+import sys
 from typing import Sequence, NamedTuple
 import subprocess
-
-# import os
+import json
 from pathlib import Path
 from dataclasses import dataclass
 from enum import StrEnum
 from textwrap import dedent
+from configparser import ConfigParser
+from textual import log
 
 # Third party
 # from ezpubsub import Signal, SignalError
 
 
-# Configuration
-MOUNT_UNIT = r"mnt-truenas\x2dtailnet-brents\x2ddata.mount"
-AUTOMOUNT_UNIT = r"mnt-truenas\x2dtailnet-brents\x2ddata.automount"
-# MOUNT_UNIT_ESCAPED = r"mnt-truenas\\x2dtailnet-brents\\x2ddata.mount"
-# AUTOMOUNT_UNIT_ESCAPED = r"mnt-truenas\\x2dtailnet-brents\\x2ddata.automount"
-MOUNT_POINT = "/mnt/truenas-tailnet/brents-data"
-SMB_SERVER = "truenas-scale"
-SMB_SHARE = "brents-data"
-CREDS_FILE = "/etc/smb-creds"
+# Logic Notes
+# Three conceptual layers:
+
+# 1) Pure logic: deterministic transformations, validation, unit generation, parsing, 
+#    comparison. No I/O, no state, no privileges.
+#    Pure logic is imported freely by your own code.
+
+# 2) System interaction: filesystem writes, symlinks, sudo, systemctl, journalctl, 
+#    discovery probes, network introspection.
+#    Anything that causes side effects, privilege escalation, or persistent system change 
+#    goes through the CLI boundary.
+
+# 3) Interfaces: CLI, TUI, GUI.
+#    The CLI becomes the authoritative orchestrator of stateful operations.
+
+
+# If skipping the CLI would allow an interface to bypass safety, consistency, or 
+# privilege rules, it should go through the CLI.
+
+# If skipping the CLI would only avoid recomputing a pure value, importing 
+# the function directly is fine.
+
+
+
+# # Configuration
+# MOUNT_UNIT = r"mnt-truenas\x2dtailnet-brents\x2ddata.mount"
+# AUTOMOUNT_UNIT = r"mnt-truenas\x2dtailnet-brents\x2ddata.automount"
+# # MOUNT_UNIT_ESCAPED = r"mnt-truenas\\x2dtailnet-brents\\x2ddata.mount"
+# # AUTOMOUNT_UNIT_ESCAPED = r"mnt-truenas\\x2dtailnet-brents\\x2ddata.automount"
+# MOUNT_POINT = "/mnt/truenas-tailnet/brents-data"
+# SMB_SERVER = "truenas-scale"
+# SMB_SHARE = "brents-data"
+# CREDS_FILE = "/etc/smb-creds"
 
 
 SYSTEMD_PATH: Path = Path("/etc/systemd/system/")
 HOME: Path = Path.home()
 SMM_PATH: Path = HOME / ".config" / "systemd-mount-manager"
-MANAGED_MOUNTS_DIR: Path = SMM_PATH / "managed-mounts"
+CONFIG_PATH = SMM_PATH / "config.ini"
+DEFAULT_MOUNTFILES_DIR: Path = SMM_PATH / "managed-mounts"
 
 
 class MountType(StrEnum):
@@ -62,6 +88,90 @@ class MountPayload:
     timeout: int
     wanted_by: str
 
+@dataclass
+class SettingsPayload:
+    managed_mounts_dir: str
+
+
+class TextualLogWriter:
+    
+    def __init__(self) -> None:
+        self.buffer: list[str] = []
+    
+    def flush(self) -> None:
+        "write collected messages to terminal"
+        log_string = "".join(self.buffer)
+        log(log_string.rstrip("\n"))
+        self.buffer = []
+    
+    def write(self, message: str) -> None:
+        self.buffer.append(message)
+        
+_log_writer = TextualLogWriter()
+
+#==============================================================================#
+
+if not SMM_PATH.exists():
+    SMM_PATH.mkdir(parents=True)
+
+config = ConfigParser()
+# If this is first run, this file will not exist yet and this will do nothing:
+read_files = config.read(CONFIG_PATH)
+
+def get_config() -> ConfigParser:
+    "Alias for config"
+    return config
+
+
+def write_default_config(force: bool = False) -> bool:
+    """Run this for first time setup. Default configs will be loaded
+    into configparser and written to config.ini
+    
+    Args:
+        force (bool, optional): Force overwrite of existing config file. Defaults to False.
+    Raises:
+        FileExistsError: if config file already exists and force is False
+    Returns:
+        bool: True if config file was created, False if it already existed (overwrite)
+    """
+    
+    configfile = CONFIG_PATH
+    config_already_exists = False
+    if configfile.exists():
+        if not force:
+            raise FileExistsError(f"Config file already exists: {configfile}")
+        config_already_exists = True
+    
+    config["DEFAULT"] = {
+        "managed_mounts_dir": DEFAULT_MOUNTFILES_DIR.as_posix(),
+    }
+    with open(CONFIG_PATH, "w") as configfile:
+        config.write(configfile)
+    
+    # if the config already exists, it means we overwrote it (we return False)
+    # if create_already_exists is False, it means we created it. (We return True)
+    return not config_already_exists
+
+def save_settings(settings_payload: SettingsPayload) -> None:
+    """Save settings to config file"""
+    
+    config["DEFAULT"]["managed_mounts_dir"] = settings_payload.managed_mounts_dir
+    
+    with open(CONFIG_PATH, "w") as configfile:
+        config.write(configfile)
+
+def load_settings() -> SettingsPayload:
+    """Load settings from config file"""
+    
+    return SettingsPayload(
+        managed_mounts_dir=config["DEFAULT"]["managed_mounts_dir"]
+    )
+
+def textual_log_config_file() -> None:
+    log("Config file:")
+    config.write(_log_writer)
+    _log_writer.flush()
+
 
 def check_sudo_cached() -> bool:
     """Check if sudo credentials are already cached
@@ -88,8 +198,7 @@ def run_command_with_sudo(command: str) -> subprocess.CompletedProcess[str]:
     Args:
         command (str): The command to run with sudo.
     Returns:
-        subprocess.CompletedProcess[str] | None: The result of the command, or
-        None if sudo is not cached.
+        subprocess.CompletedProcess[str]: The result of the command
     Raises:
         PermissionError: If sudo is not cached.
     """
@@ -107,12 +216,16 @@ def run_command_with_sudo(command: str) -> subprocess.CompletedProcess[str]:
 
     return process
 
+def run_command_from_stdin(command: str):
+    pass
+    
+
 
 def input_sudo_password(password: str) -> tuple[bool, str]:
     """Authenticate with sudo and cache credentials.
 
     Returns:
-        tuple[bool, str]: (success, error_message)
+        tuple: (success, error_message)
     """
     process = subprocess.Popen(
         ["sudo", "-S", "true"],
@@ -135,6 +248,27 @@ def input_sudo_password(password: str) -> tuple[bool, str]:
     else:
         return False, stderr.strip()
 
+
+def run_stdio_mode():
+    """stdio mode - read commands from stdin, write responses to stdout"""
+    while True:
+        try:
+            line = input()  # or sys.stdin.readline()
+            if not line or line.strip() == "quit":
+                break
+            
+            # Parse and execute command
+            result = run_command_from_stdin(line.strip())
+            
+            # Send response (JSON is clean)
+            print(json.dumps({"status": "ok", "result": result}))
+            sys.stdout.flush()  # Important!
+            
+        except EOFError:
+            break
+        except Exception as e:
+            print(json.dumps({"status": "error", "error": str(e)}))
+            sys.stdout.flush()
 
 class SystemctlListUnitsLine(NamedTuple):
     """
@@ -179,7 +313,7 @@ def detect_exising_mounts() -> list[SystemctlListUnitsLine]:
 
     # unit_name = line.split()[0]
     # fragment = run_command(["systemctl", "show", "-p", "FragmentPath", unit_name])
-    # if str(MANAGED_MOUNTS_DIR) in fragment.stdout:
+    # if str(DEFAULT_MOUNTFILES_DIR) in fragment.stdout:
     #     # Your mount
     #     pass
     # elif "/run/systemd/generator/" in fragment.stdout:
@@ -225,7 +359,7 @@ def create_mount_file(mount_payload: MountPayload) -> str:
         ]
     )
     mountfile_name = result.stdout.strip()
-    output_path = MANAGED_MOUNTS_DIR / mountfile_name
+    output_path = DEFAULT_MOUNTFILES_DIR / mountfile_name
 
     try:
         # Ensure parent directory exists
@@ -249,7 +383,7 @@ def mount_at_boot(mount_unit: str, automount_unit: str) -> None:
     run_command(["systemctl", "disable", str(automount_unit)])
 
     # Create symlink for only .mount file
-    src_mount: Path = MANAGED_MOUNTS_DIR / mount_unit
+    src_mount: Path = DEFAULT_MOUNTFILES_DIR / mount_unit
     run_command(["ln", "-sf", str(src_mount), str(SYSTEMD_PATH)])
 
     # Enable the .mount file
@@ -268,7 +402,7 @@ def mount_lazily(mount_unit: str, automount_unit: str) -> None:
 
     # Create symlinks for both (need both for automount)
     for unit in [mount_unit, automount_unit]:
-        src_unit: Path = MANAGED_MOUNTS_DIR / unit
+        src_unit: Path = DEFAULT_MOUNTFILES_DIR / unit
         run_command(["ln", "-sf", str(src_unit), str(SYSTEMD_PATH)])
 
     # Enable only the automount
