@@ -1,6 +1,8 @@
 .compact-static {
     width: auto;
     padding: 0 1;
+    # background: blue;
+    content-align: center middle;
 }
 
 Button {&:focus {text-style: none;}}
@@ -15,6 +17,14 @@ Button {&:focus {text-style: none;}}
 
 .center-middle {
     align: center middle;
+}
+
+.boost {
+    background: $boost;
+}
+
+.margin-1-0 {
+    margin: 1 0;
 }
 
 CustomHeader {
@@ -83,7 +93,7 @@ SettingOption {
     width: 1fr;
     margin: 0 0 1 0;
     # padding: 0 0 0 1;
-    background: $background-lighten-1;
+    background: $boost;
     border-left: outer $panel-lighten-2;
     .setting-description { 
         width: auto;
@@ -93,6 +103,15 @@ SettingOption {
     }
     #setting-input { width: 1fr; }   
     # setting-switch { background: green; }
+}
+
+.option-box {
+    height: 3;
+    width: 1fr;
+    margin: 0 0 1 0;
+    # padding: 0 0 0 1;
+    background: $boost;
+    border-left: outer $panel-lighten-2;
 }
 
 #help-container {

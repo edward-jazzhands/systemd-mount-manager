@@ -50,7 +50,6 @@ class CustomHeader(Container):
                 yield Static(f"Dev Mode: {self.app_data.dev_mode}")
                 yield Static(f"Fallback: {self.app_data.fallback}")
         
-        
     
 @dataclass                
 class AppData:

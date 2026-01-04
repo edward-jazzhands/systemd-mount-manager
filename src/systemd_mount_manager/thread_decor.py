@@ -53,7 +53,7 @@ def run_in_thread_awaitable(fn: Callable[P, R]) -> Callable[P, Awaitable[R]]:
     return wrapper
 
 
-# For testing / Demonstration
+# For Demonstration
 if __name__ == "__main__":
     # Test #1 : sync
 

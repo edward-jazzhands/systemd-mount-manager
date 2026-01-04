@@ -152,13 +152,32 @@ def write_default_config(force: bool = False) -> bool:
     # if create_already_exists is False, it means we created it. (We return True)
     return not config_already_exists
 
-def save_settings(settings_payload: SettingsPayload) -> None:
-    """Save settings to config file"""
+def change_managed_mounts_dir(new_dir: str) -> None:
+    """Change the managed mounts directory"""
     
-    config["DEFAULT"]["managed_mounts_dir"] = settings_payload.managed_mounts_dir
+    # first convert the string to a path object
+    new_path = Path(new_dir)
+    
+    config["DEFAULT"]["managed_mounts_dir"] = new_dir.as_posix()
     
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
+
+
+def save_settings(settings_payload: SettingsPayload) -> None:
+    """Save settings to config file"""
+    
+    # First load new settings into configparser memory
+    
+    # Compare old managed mounts dir with new managed mounts dir
+    if config["DEFAULT"]["managed_mounts_dir"] != settings_payload.managed_mounts_dir:
+        # If the new managed mounts dir is different from the old one,
+        change_managed_mounts_dir(new_dir)
+    
+    # Use configparser to write to file
+    with open(CONFIG_PATH, "w") as configfile:
+        config.write(configfile)
+
 
 def load_settings() -> SettingsPayload:
     """Load settings from config file"""
