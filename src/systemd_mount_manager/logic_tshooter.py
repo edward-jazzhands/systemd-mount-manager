@@ -44,11 +44,9 @@ def run_command(
     check: bool = True,
 ) -> subprocess.CompletedProcess[str] | subprocess.CalledProcessError:
     """Run a shell command and return result"""
-    
+
     try:
-        result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, check=check
-        )
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=check)
     except subprocess.CalledProcessError as e:
         return e
     else:
@@ -87,9 +85,7 @@ def check_enabled_units() -> None:
         is_one_enabled = True
 
     # Automount
-    automount_enabled_result = run_command(
-        f"systemctl is-enabled {AUTOMOUNT_UNIT_ESCAPED}"
-    )
+    automount_enabled_result = run_command(f"systemctl is-enabled {AUTOMOUNT_UNIT_ESCAPED}")
     automount_enabled = automount_enabled_result.returncode == 0
     # print_status(automount_enabled, "Auto-mount at boot unit enabled?")
     if automount_enabled:
@@ -166,9 +162,7 @@ def check_tailscale() -> None:
 
     # print_status(smb_server_online, "Tailscaled says your SMB server is online?")
     if not smb_server_online:
-        TroubleshooterData.problems_found.append(
-            (f"Tailscaled says {SMB_SERVER} is offline", 4)
-        )
+        TroubleshooterData.problems_found.append((f"Tailscaled says {SMB_SERVER} is offline", 4))
 
 
 def check_mount_point() -> None:
@@ -247,9 +241,7 @@ def show_journal_logs() -> None:
         print(line)
 
     print("\n--- Automount unit logs (last 5 lines) ---")
-    automount_logs = run_command(
-        f"journalctl -u {AUTOMOUNT_UNIT_ESCAPED} -n 5 --no-pager 2>&1"
-    )
+    automount_logs = run_command(f"journalctl -u {AUTOMOUNT_UNIT_ESCAPED} -n 5 --no-pager 2>&1")
     log_lines = automount_logs.stdout.strip().split("\n")
     for line in log_lines[-5:]:
         print(line)
@@ -259,8 +251,6 @@ def print_problems() -> None:
     """[10] Print problems found"""
 
     if TroubleshooterData.problems_found:
-        print(
-            f"Troubleshooter discovered {len(TroubleshooterData.problems_found)} problems:"
-        )
+        print(f"Troubleshooter discovered {len(TroubleshooterData.problems_found)} problems:")
         for problem in TroubleshooterData.problems_found:
             print(f"Found in step {problem[1]}: {problem[0]}")

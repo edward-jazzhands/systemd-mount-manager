@@ -5,6 +5,8 @@ Contains the Settings tab for Systemd Mount Manager.
 # Python imports
 from __future__ import annotations
 from enum import Enum
+from pathlib import Path
+
 # from typing import Any  # , cast
 # import sys
 # from dataclasses import dataclass
@@ -12,7 +14,7 @@ from enum import Enum
 # Textual imports
 from textual import on  # , log
 from textual.app import ComposeResult
-from textual.widgets import TabPane, Button
+from textual.widgets import TabPane, Button, TextArea, Input
 from textual.containers import (
     Container,
     Horizontal,
@@ -43,36 +45,73 @@ class ChangeManagedMountsDirScreen(ModalScreen[None]):
         ),
     ]
 
-    def __init__(
-        self, new_managed_mounts_dir: str, current_managed_mounts_dir: str
-    ) -> None:
+    def __init__(self, new_managed_mounts_dir: str, current_managed_mounts_dir: str) -> None:
         super().__init__(classes="center-middle")
         self.new_managed_mounts_dir = new_managed_mounts_dir
         self.current_managed_mounts_dir = current_managed_mounts_dir
 
+        # convert both to Path objects
+        self.new_managed_mounts_dir = Path(self.new_managed_mounts_dir)
+        self.current_managed_mounts_dir = Path(self.current_managed_mounts_dir)
+        self.new_dir_exists = self.new_managed_mounts_dir.exists()
+
     def compose(self) -> ComposeResult:
-        # We need to know
+        # We need to know:
+        # Does the new dir already exist? Should it be created?
         # Does the user want to copy their existing mounts to the new dir?
         # Does the user want to delete the existing dir?
-        # Is there a git repo in the old dir?
-        # Does the new dir already exist? Should it be created?
+        # We need to do:
+        # Grey out continue buttons and show message if proceeding is not possible
+        # Validate input fields
+        # Validate we have permissions to write to new dir
+        # Create additional warning if user chooses not to migrate mounts
 
         with VerticalScroll(id="help-container"):
-            yield Static("Change managed mounts directory", classes="h2")
-            yield Static(f"Current: \n{self.current_managed_mounts_dir}", classes="h3")
-            yield Static(f"New: \n{self.new_managed_mounts_dir}", classes="h3")
+            yield Static("Change managed mounts directory", classes="inline-header")
+            yield Static("\nCurrent:", classes="w1fr h2")
+            yield TextArea(
+                f"{self.current_managed_mounts_dir}",
+                compact=True,
+                soft_wrap=False,
+                read_only=True,
+            )
+            yield Static("\nNew:", classes="w1fr h2")
+            yield TextArea(
+                f"{self.new_managed_mounts_dir}",
+                compact=True,
+                soft_wrap=False,
+                read_only=True,
+            )
+            color = "green" if self.new_dir_exists else "red"
+            yield Static(
+                f"\nNew dir exists already: [{color}]{self.new_dir_exists}[/{color}]", classes="w1fr h2"
+            )
+            yield Static(classes="w1fr")
             with Horizontal(classes="option-box"):
-                yield Static("Copy existing mounts to new dir?", classes="h3 compact-static")
-                yield Container()
+                yield Static("Create new dir if it doesn't exist?", classes="h3 left-middle")
+                yield Switch(id="create-new-dir")
+            with Horizontal(classes="option-box"):
+                yield Static(
+                    "Migrate all managed mount files to new dir? \n"
+                    "Existing files with matching names will be overwritten in the new directory, "
+                    "and linked symlinks in /etc/systemd/system will be updated to match the new dir",
+                )
                 yield Switch(id="copy-existing-mounts")
-            with Horizontal(classes="option-box"):
-                yield Static("Delete existing dir?", classes="h3 compact-static")
+            with Horizontal(classes="save-cancel-buttons"):
                 yield Container()
-                yield Switch(id="delete-existing-dir")
+                yield Button("Confirm", id="save-button")
+                yield Button("Cancel", id="cancel-button")
 
     def action_close_screen(self) -> None:
         self.dismiss()
 
+    @on(Button.Pressed, "#save-button")
+    def save_button_pressed(self, event: Button.Pressed) -> None:
+        self.notify("save_button_pressed")
+        
+    @on(Button.Pressed, "#cancel-button")
+    def cancel_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss()
 
 class SettingType(Enum):
     INPUT = 1
@@ -110,9 +149,7 @@ class SettingOption(Container):
 class SettingsTab(TabPane):
     def compose(self) -> ComposeResult:
         with ScrollableContainer(classes="content-container"):
-            with Container(
-                id="settings-container", classes="card-container center-middle"
-            ):
+            with Container(id="settings-container", classes="card-container center-middle"):
                 yield SettingOption(
                     widget_id="managed-mounts-dir",
                     description="Directory to store managed mounts. \nChanging this"
@@ -142,9 +179,7 @@ class SettingsTab(TabPane):
 
     def load_settings(self) -> None:
         settings_payload = logic.load_settings()
-        self.query_one(
-            "#managed-mounts-dir", Input
-        ).value = settings_payload.managed_mounts_dir
+        self.query_one("#managed-mounts-dir", Input).value = settings_payload.managed_mounts_dir
 
     @on(Switch.Changed, "#test-switch")
     def switch_changed(self, event: Switch.Changed) -> None:
@@ -160,14 +195,11 @@ class SettingsTab(TabPane):
         current_managed_mounts_dir = logic.config["DEFAULT"]["managed_mounts_dir"]
         if current_managed_mounts_dir != new_managed_mounts_dir:
             result = self.app.push_screen(
-                ChangeManagedMountsDirScreen(
-                    new_managed_mounts_dir, current_managed_mounts_dir
-                )
+                ChangeManagedMountsDirScreen(new_managed_mounts_dir, current_managed_mounts_dir)
             )
+            return
 
-        settings_payload = logic.SettingsPayload(
-            managed_mounts_dir=new_managed_mounts_dir
-        )
+        settings_payload = logic.SettingsPayload(managed_mounts_dir=new_managed_mounts_dir)
         try:
             logic.save_settings(settings_payload)
         except Exception as e:

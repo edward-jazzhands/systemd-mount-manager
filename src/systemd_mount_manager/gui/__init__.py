@@ -27,10 +27,10 @@ def gui_run(debug: bool) -> None:
         sys.exit(1)
 
     try:
-        gi.require_version('Gtk', '4.0')  # or '3.0' depending on target
+        gi.require_version("Gtk", "4.0")  # or '3.0' depending on target
         from gi.repository import Gtk
     except (ValueError, ImportError) as e:
         debug_msg(f"ERROR: GTK not available: {e}", debug)
         sys.exit(1)
-        
+
     debug_msg("GTK and Pygobject were both imported successfully.", debug)

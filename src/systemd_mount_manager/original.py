@@ -4,6 +4,7 @@ from typing import Sequence
 import subprocess
 from pathlib import Path
 
+
 # ANSI color codes
 class Color:
     RED = "\033[0;31m"
@@ -41,9 +42,7 @@ def get_input(prompt: str, options: str, default: str) -> str:
     while True:
         try:
             user_input: str = (
-                input(
-                    f"{Color.BLUE}{prompt}{Color.NC}\n({options} [default={default}]): "
-                )
+                input(f"{Color.BLUE}{prompt}{Color.NC}\n({options} [default={default}]): ")
                 .lower()
                 .strip()
             )
@@ -53,9 +52,7 @@ def get_input(prompt: str, options: str, default: str) -> str:
             valid_chars: str = options.lower().replace("/", "")
             if user_input in valid_chars and len(user_input) == 1:
                 return user_input
-            print(
-                f"{Color.RED}Invalid input. Please enter one of: {options}.{Color.NC}"
-            )
+            print(f"{Color.RED}Invalid input. Please enter one of: {options}.{Color.NC}")
         except EOFError:
             return default
 
@@ -91,9 +88,7 @@ class Setup:
         target_path: Path = target.expanduser()
 
         if self.dry_run:
-            print(
-                f"{Color.YELLOW}[DRY-RUN]{Color.NC} Would symlink: {source} -> {target_path}"
-            )
+            print(f"{Color.YELLOW}[DRY-RUN]{Color.NC} Would symlink: {source} -> {target_path}")
             return
 
         try:
@@ -123,9 +118,7 @@ class Setup:
     def setup_truenas_smb(self) -> None:
         """Symlink TrueNAS SMB shares"""
 
-        mount_type: str = get_input(
-            "Mount at boot (b), or mount lazily/automount (l)?", "b/l", "l"
-        )
+        mount_type: str = get_input("Mount at boot (b), or mount lazily/automount (l)?", "b/l", "l")
 
         if mount_type == "b":
             print("Attempting to disable automount if enabled")
@@ -179,9 +172,7 @@ class Troubleshooter:
 
     def print_status(self, success: bool, message: str) -> None:
         """Print a status message with checkmark or X"""
-        symbol = (
-            f"[{Color.GREEN}✓{Color.NC}]" if success else f"[{Color.RED}X{Color.NC}]"
-        )
+        symbol = f"[{Color.GREEN}✓{Color.NC}]" if success else f"[{Color.RED}X{Color.NC}]"
         print(f"{symbol} {message}")
 
     def run_command(
@@ -191,9 +182,7 @@ class Troubleshooter:
         if self.display_output:
             display_output = True
         try:
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, check=check
-            )
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=check)
         except subprocess.CalledProcessError as e:
             return e
         else:
@@ -208,9 +197,7 @@ class Troubleshooter:
                         f"{Color.RED}Command error:{Color.GRAY} {result.stderr.strip()}{Color.NC}"
                     )
                 else:
-                    print(
-                        f"{Color.RED}Command output:{Color.GRAY} no output to display{Color.NC}"
-                    )
+                    print(f"{Color.RED}Command output:{Color.GRAY} no output to display{Color.NC}")
             return result
 
     def check_unit_files(self) -> None:
@@ -223,9 +210,7 @@ class Troubleshooter:
         self.print_status(mount_path.exists(), "Mount unit file exists?")
         if not mount_path.exists():
             print("    Mount unit NOT found in /etc/systemd/system/")
-            self.problems_found.append(
-                ("Mount unit file NOT found in /etc/systemd/system/", 1)
-            )
+            self.problems_found.append(("Mount unit file NOT found in /etc/systemd/system/", 1))
 
         self.print_status(automount_path.exists(), "Automount unit file exists?")
         if not automount_path.exists():
@@ -236,16 +221,12 @@ class Troubleshooter:
 
     def check_enabled_units(self) -> None:
         """[2] Check which units are enabled"""
-        print(
-            f"\n{Color.BLUE}[2] Checking enabled units... (Only 1 must be enabled){Color.NC}"
-        )
+        print(f"\n{Color.BLUE}[2] Checking enabled units... (Only 1 must be enabled){Color.NC}")
 
         is_one_enabled = False
 
         # Mount at boot
-        mount_enabled_result = self.run_command(
-            f"systemctl is-enabled {MOUNT_UNIT_ESCAPED}"
-        )
+        mount_enabled_result = self.run_command(f"systemctl is-enabled {MOUNT_UNIT_ESCAPED}")
         mount_enabled = mount_enabled_result.returncode == 0
         self.print_status(mount_enabled, "Mount at boot unit enabled?")
         if mount_enabled:
@@ -309,9 +290,7 @@ class Troubleshooter:
             return
 
         # Tailscale is installed, check if running:
-        tailscaled_active_result = self.run_command(
-            "systemctl is-active tailscaled.service"
-        )
+        tailscaled_active_result = self.run_command("systemctl is-active tailscaled.service")
         tailscaled_active = tailscaled_active_result.returncode == 0
         self.print_status(tailscaled_active, "Is Tailscaled running?")
         if not tailscaled_active:
@@ -327,7 +306,7 @@ class Troubleshooter:
             print(f"{Color.YELLOW}    Tailscale is NOT connected{Color.NC}")
             self.problems_found.append(("Tailscale is NOT connected", 4))
             return
-        
+
         # Tailscale is connected, check if destination is also connected:
         output = tailscale_status.stdout.strip().split("\n")
         found_smb_server = False
@@ -337,12 +316,18 @@ class Troubleshooter:
                 found_smb_server = True
                 if "offline" not in line:
                     smb_server_online = True
-                    
-        self.print_status(found_smb_server, "Tailscaled says your SMB server exists in your tailnet?")
+
+        self.print_status(
+            found_smb_server, "Tailscaled says your SMB server exists in your tailnet?"
+        )
         if not found_smb_server:
-            print(f"{Color.YELLOW}    Tailscaled says {SMB_SERVER} does NOT exist in your tailnet{Color.NC}")
-            self.problems_found.append((f"Tailscaled says {SMB_SERVER} does NOT exist in your tailnet", 4))
-            
+            print(
+                f"{Color.YELLOW}    Tailscaled says {SMB_SERVER} does NOT exist in your tailnet{Color.NC}"
+            )
+            self.problems_found.append(
+                (f"Tailscaled says {SMB_SERVER} does NOT exist in your tailnet", 4)
+            )
+
         self.print_status(smb_server_online, "Tailscaled says your SMB server is online?")
         if not smb_server_online:
             print(f"{Color.YELLOW}    Tailscaled says {SMB_SERVER} is offline{Color.NC}")
@@ -351,7 +336,6 @@ class Troubleshooter:
     def check_mount_point(self) -> None:
         """[5] Check if mount point directory exists"""
         print(f"\n{Color.BLUE}[5] Checking mount point directory...{Color.NC}")
-
 
         try:
             mount_path = Path(MOUNT_POINT)
@@ -404,9 +388,7 @@ class Troubleshooter:
 
         self.print_status(can_ping, f"Can ping {SMB_SERVER}?")
         if can_ping:
-            print(
-                f"    {Color.GREEN}Confirmed can ping {SMB_SERVER}, results:{Color.NC}"
-            )
+            print(f"    {Color.GREEN}Confirmed can ping {SMB_SERVER}, results:{Color.NC}")
             # Extract time from ping output
             for line in ping_result.stdout.split("\n"):
                 if "time=" in line:
@@ -437,9 +419,7 @@ class Troubleshooter:
         print(f"\n{Color.BLUE}[9] Recent systemd journal entries...{Color.NC}")
 
         print("--- Mount unit logs (last 5 lines) ---")
-        mount_logs = self.run_command(
-            f"journalctl -u {MOUNT_UNIT_ESCAPED} -n 5 --no-pager 2>&1"
-        )
+        mount_logs = self.run_command(f"journalctl -u {MOUNT_UNIT_ESCAPED} -n 5 --no-pager 2>&1")
         log_lines = mount_logs.stdout.strip().split("\n")
         for line in log_lines[-5:]:
             print(line)
@@ -503,7 +483,7 @@ def main() -> None:
     elif user_input == "2":
         print("#=============================================#")
         print("            SMB Over Tailscale Setup")
-        
+
         # Interactive Dry-Run Prompt
         dry_run_choice: str = get_input(
             "Run in Dry-Run mode? (No changes will be made)", "y/n", "n"
@@ -516,15 +496,13 @@ def main() -> None:
             )
         setup = Setup(dry_run=dry_run)
         setup.setup_truenas_smb()
-        
+
     elif user_input == "3":
-        
+
         print("#==============================================#")
         print("      SMB Over Tailscale Troubleshooter")
-        
-        print(
-            "Display full command output? (Helpful for debugging) (y/n[default]): "
-        )
+
+        print("Display full command output? (Helpful for debugging) (y/n[default]): ")
         user_input = input().lower().strip()
         if user_input == "y":
             display_output = True

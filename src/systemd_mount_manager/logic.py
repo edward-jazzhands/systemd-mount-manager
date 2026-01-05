@@ -19,25 +19,24 @@ from textual import log
 # Logic Notes
 # Three conceptual layers:
 
-# 1) Pure logic: deterministic transformations, validation, unit generation, parsing, 
+# 1) Pure logic: deterministic transformations, validation, unit generation, parsing,
 #    comparison. No I/O, no state, no privileges.
 #    Pure logic is imported freely by your own code.
 
-# 2) System interaction: filesystem writes, symlinks, sudo, systemctl, journalctl, 
+# 2) System interaction: filesystem writes, symlinks, sudo, systemctl, journalctl,
 #    discovery probes, network introspection.
-#    Anything that causes side effects, privilege escalation, or persistent system change 
+#    Anything that causes side effects, privilege escalation, or persistent system change
 #    goes through the CLI boundary.
 
 # 3) Interfaces: CLI, TUI, GUI.
 #    The CLI becomes the authoritative orchestrator of stateful operations.
 
 
-# If skipping the CLI would allow an interface to bypass safety, consistency, or 
+# If skipping the CLI would allow an interface to bypass safety, consistency, or
 # privilege rules, it should go through the CLI.
 
-# If skipping the CLI would only avoid recomputing a pure value, importing 
+# If skipping the CLI would only avoid recomputing a pure value, importing
 # the function directly is fine.
-
 
 
 # # Configuration
@@ -88,28 +87,30 @@ class MountPayload:
     timeout: int
     wanted_by: str
 
+
 @dataclass
 class SettingsPayload:
     managed_mounts_dir: str
 
 
 class TextualLogWriter:
-    
+
     def __init__(self) -> None:
         self.buffer: list[str] = []
-    
+
     def flush(self) -> None:
         "write collected messages to terminal"
         log_string = "".join(self.buffer)
         log(log_string.rstrip("\n"))
         self.buffer = []
-    
+
     def write(self, message: str) -> None:
         self.buffer.append(message)
-        
+
+
 _log_writer = TextualLogWriter()
 
-#==============================================================================#
+# ==============================================================================#
 
 if not SMM_PATH.exists():
     SMM_PATH.mkdir(parents=True)
@@ -117,6 +118,7 @@ if not SMM_PATH.exists():
 config = ConfigParser()
 # If this is first run, this file will not exist yet and this will do nothing:
 read_files = config.read(CONFIG_PATH)
+
 
 def get_config() -> ConfigParser:
     "Alias for config"
@@ -126,7 +128,7 @@ def get_config() -> ConfigParser:
 def write_default_config(force: bool = False) -> bool:
     """Run this for first time setup. Default configs will be loaded
     into configparser and written to config.ini
-    
+
     Args:
         force (bool, optional): Force overwrite of existing config file. Defaults to False.
     Raises:
@@ -134,46 +136,47 @@ def write_default_config(force: bool = False) -> bool:
     Returns:
         bool: True if config file was created, False if it already existed (overwrite)
     """
-    
+
     configfile = CONFIG_PATH
     config_already_exists = False
     if configfile.exists():
         if not force:
             raise FileExistsError(f"Config file already exists: {configfile}")
         config_already_exists = True
-    
+
     config["DEFAULT"] = {
         "managed_mounts_dir": DEFAULT_MOUNTFILES_DIR.as_posix(),
     }
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
-    
+
     # if the config already exists, it means we overwrote it (we return False)
     # if create_already_exists is False, it means we created it. (We return True)
     return not config_already_exists
 
+
 def change_managed_mounts_dir(new_dir: str) -> None:
     """Change the managed mounts directory"""
-    
+
     # first convert the string to a path object
     new_path = Path(new_dir)
-    
+
     config["DEFAULT"]["managed_mounts_dir"] = new_dir.as_posix()
-    
+
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
 
 
 def save_settings(settings_payload: SettingsPayload) -> None:
     """Save settings to config file"""
-    
+
     # First load new settings into configparser memory
-    
+
     # Compare old managed mounts dir with new managed mounts dir
     if config["DEFAULT"]["managed_mounts_dir"] != settings_payload.managed_mounts_dir:
         # If the new managed mounts dir is different from the old one,
         change_managed_mounts_dir(new_dir)
-    
+
     # Use configparser to write to file
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
@@ -181,10 +184,9 @@ def save_settings(settings_payload: SettingsPayload) -> None:
 
 def load_settings() -> SettingsPayload:
     """Load settings from config file"""
-    
-    return SettingsPayload(
-        managed_mounts_dir=config["DEFAULT"]["managed_mounts_dir"]
-    )
+
+    return SettingsPayload(managed_mounts_dir=config["DEFAULT"]["managed_mounts_dir"])
+
 
 def textual_log_config_file() -> None:
     log("Config file:")
@@ -235,9 +237,9 @@ def run_command_with_sudo(command: str) -> subprocess.CompletedProcess[str]:
 
     return process
 
+
 def run_command_from_stdin(command: str):
     pass
-    
 
 
 def input_sudo_password(password: str) -> tuple[bool, str]:
@@ -255,10 +257,10 @@ def input_sudo_password(password: str) -> tuple[bool, str]:
     )
 
     _, stderr = process.communicate(input=password + "\n")
-    
+
     if process.returncode == 0:
         return True, ""
-    
+
     # Parse stderr for useful error messages
     if "incorrect password" in stderr.lower():
         return False, "Incorrect password"
@@ -275,19 +277,20 @@ def run_stdio_mode():
             line = input()  # or sys.stdin.readline()
             if not line or line.strip() == "quit":
                 break
-            
+
             # Parse and execute command
             result = run_command_from_stdin(line.strip())
-            
+
             # Send response (JSON is clean)
             print(json.dumps({"status": "ok", "result": result}))
             sys.stdout.flush()  # Important!
-            
+
         except EOFError:
             break
         except Exception as e:
             print(json.dumps({"status": "error", "error": str(e)}))
             sys.stdout.flush()
+
 
 class SystemctlListUnitsLine(NamedTuple):
     """
@@ -308,9 +311,7 @@ class SystemctlListUnitsLine(NamedTuple):
 
 def detect_exising_mounts() -> list[SystemctlListUnitsLine]:
     # First hit systemctl, get giant string returned
-    result = run_command(
-        ["systemctl", "list-units", "--type=mount", "--all", "--no-legend"]
-    )
+    result = run_command(["systemctl", "list-units", "--type=mount", "--all", "--no-legend"])
 
     # Now normalize the data by converting each line to a SystemctlListUnitsLine obj
     mounts_list_normalized: list[SystemctlListUnitsLine] = []
@@ -351,7 +352,8 @@ def create_mount_file(mount_payload: MountPayload) -> str:
         Exception: if error while creating the file
     """
 
-    mount_string = dedent(f"""\
+    mount_string = dedent(
+        f"""\
         [Unit]
         Description={mount_payload.description}
         Requires={mount_payload.requires}
@@ -366,7 +368,8 @@ def create_mount_file(mount_payload: MountPayload) -> str:
 
         [Install]
         WantedBy={mount_payload.wanted_by}
-    """)
+    """
+    )
 
     # Here need to call systemd-escape to get the correct file name
     result = run_command(
