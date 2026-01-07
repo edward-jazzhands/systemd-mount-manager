@@ -6,9 +6,11 @@ Contains the Settings tab for Systemd Mount Manager.
 from __future__ import annotations
 from enum import Enum
 from pathlib import Path
+
 # from asyncio import Await
 
 from typing import Awaitable  # , cast
+
 # import sys
 # from dataclasses import dataclass
 
@@ -17,7 +19,7 @@ from textual import on, log, work
 import textual.events as events
 from textual.app import ComposeResult
 from textual.widgets import TabPane, Button, TextArea, Input, Static, Switch
-from textual.validation import ValidationResult, Validator #, Function, Number
+from textual.validation import ValidationResult, Validator  # , Function, Number
 from textual.containers import (
     Container,
     Horizontal,
@@ -35,7 +37,7 @@ import systemd_mount_manager.logic as logic
 # [ ]: Extra options modal when changing maaged-mounts-dir
 
 
-class ValidPath(Validator):  
+class ValidPath(Validator):
     def validate(self, value: str) -> ValidationResult:
         """Check that a value is a valid path."""
 
@@ -47,15 +49,15 @@ class ValidPath(Validator):
 
         if not value.isprintable():
             return self.failure("Invalid path: contains non-printable characters")
-                        
+
         try:
             path = Path(value).expanduser()
         except Exception as e:
             return self.failure(f"Invalid path: {e}")
-        
+
         if not path.is_absolute():
             return self.failure("Invalid path: not absolute")
-        
+
         log(f"Valid path: {path.as_posix()}")
         return self.success()
 
@@ -64,7 +66,7 @@ class MountsDirScreenResult(Enum):
     PROCEED_WITHOUT_MIGRATE = 1
     PROCEED_WITH_MIGRATE = 2
     CANCEL = 3
-    
+
 
 class ChangeManagedMountsDirScreen(ModalScreen[MountsDirScreenResult]):
     """This does not get launched unless the new dir is different from the current one.
@@ -81,7 +83,7 @@ class ChangeManagedMountsDirScreen(ModalScreen[MountsDirScreenResult]):
 
     def __init__(self, new_dir_path: Path, current_dir_path: Path) -> None:
         super().__init__(classes="center-middle")
-        
+
         self.new_dir_path = new_dir_path
         self.current_dir_path = current_dir_path
 
@@ -109,12 +111,11 @@ class ChangeManagedMountsDirScreen(ModalScreen[MountsDirScreenResult]):
                 read_only=True,
             )
             if self.new_dir_path.exists():
-                yield Static(
-                    "\nNew dir exists already: [green]True[/green]", classes="w1fr h2"
-                )
+                yield Static("\nNew dir exists already: [green]True[/green]", classes="w1fr h2")
             else:
                 yield Static(
-                    "\nNew dir exists already: [red]False[/red]  -  Operation will create it", classes="w1fr h2"
+                    "\nNew dir exists already: [red]False[/red]  -  Operation will create it",
+                    classes="w1fr h2",
                 )
             yield Static(classes="w1fr")
             with Horizontal(classes="option-box"):
@@ -124,7 +125,10 @@ class ChangeManagedMountsDirScreen(ModalScreen[MountsDirScreenResult]):
                     "and linked symlinks in /etc/systemd/system will be updated to match the new dir",
                 )
                 yield Switch(id="migrate-existing-mounts")
-            yield Static("This will not delete or modify anything in the current directory.", classes="w1fr h2")
+            yield Static(
+                "This will not delete or modify anything in the current directory.",
+                classes="w1fr h2",
+            )
             with Horizontal(classes="save-cancel-buttons"):
                 yield Container()
                 yield Button("Confirm", id="save-button")
@@ -137,19 +141,20 @@ class ChangeManagedMountsDirScreen(ModalScreen[MountsDirScreenResult]):
 
     def action_close_screen(self) -> None:
         self.dismiss(MountsDirScreenResult.CANCEL)
-        
+
     @on(Button.Pressed, "#cancel-button")
     def cancel_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(MountsDirScreenResult.CANCEL)
-        
+
     @on(Button.Pressed, "#save-button")
     def save_button_pressed(self, event: Button.Pressed) -> None:
-        
+
         migrate = self.query_one("#migrate-existing-mounts", Switch).value
         if migrate:
             self.dismiss(MountsDirScreenResult.PROCEED_WITH_MIGRATE)
         else:
             self.dismiss(MountsDirScreenResult.PROCEED_WITHOUT_MIGRATE)
+
 
 class SettingType(Enum):
     INPUT = 1
@@ -182,12 +187,17 @@ class SettingOption(Container):
                 yield Switch(id=self.widget_id)
                 self.add_class("h3")
         if self.setting_type == SettingType.INPUT:
-            yield Input(self.value_str, id=self.widget_id, validators=self.validator, validate_on=["submitted", "blur"])
+            yield Input(
+                self.value_str,
+                id=self.widget_id,
+                validators=self.validator,
+                validate_on=["submitted", "blur"],
+            )
             self.add_class("h6")
 
 
 class SettingsTab(TabPane):
-    
+
     def compose(self) -> ComposeResult:
         with ScrollableContainer(classes="content-container"):
             with Container(id="settings-container", classes="card-container center-middle"):
@@ -230,11 +240,10 @@ class SettingsTab(TabPane):
     # @on(Input.Blurred, "#managed-mounts-dir")
     @on(Input.Submitted, "#managed-mounts-dir")
     def show_invalid_reasons(self, event: Input.Submitted) -> None:
-        
+
         if event.validation_result and not event.validation_result.is_valid:
             for failure in event.validation_result.failure_descriptions:
                 self.notify(failure)
-
 
     @on(Button.Pressed, "#save-button")
     @work(group="save-settings", exclusive=True, exit_on_error=True)
@@ -242,13 +251,13 @@ class SettingsTab(TabPane):
 
         something_changed = False
         # migrate = False
-        
+
         # Gather references to all the settings widgets
         managed_mounts_dir_input = self.query_one("#managed-mounts-dir", Input)
-        
+
         # Extract values from settings widgets
         new_dir_input = managed_mounts_dir_input.value
-        
+
         # Normalize extracted values
         new_dir_path = Path(new_dir_input).expanduser()
         new_dir_as_posix = new_dir_path.as_posix()
@@ -269,7 +278,7 @@ class SettingsTab(TabPane):
             )
             if result == MountsDirScreenResult.CANCEL:
                 return
-            migrate = (result == MountsDirScreenResult.PROCEED_WITH_MIGRATE)
+            migrate = result == MountsDirScreenResult.PROCEED_WITH_MIGRATE
             try:
                 logic.change_managed_mounts_dir(new_dir_as_posix, migrate=migrate)
             except (ValueError, OSError) as e:
@@ -277,14 +286,13 @@ class SettingsTab(TabPane):
                 self.notify(f"Error: {e}")
                 return
             something_changed = True
-            
+
         if something_changed:
             self.log("Settings saved")
             self.notify("Settings saved")
         else:
             self.log("No settings changed, nothing to save.")
             self.notify("No settings changed, nothing to save.")
-
 
     @on(Button.Pressed, "#cancel-button")
     def cancel_button_pressed(self, event: Button.Pressed) -> None:

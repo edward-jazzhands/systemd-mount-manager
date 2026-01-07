@@ -119,6 +119,7 @@ config = ConfigParser()
 # If this is first run, this file will not exist yet and this will do nothing:
 read_files = config.read(CONFIG_PATH)
 
+
 # A small helper to log current config to Textual console, for debugging
 def textual_log_config_file() -> None:
     log("Config file:")
@@ -137,11 +138,11 @@ def write_default_config(force: bool = False) -> bool:
     Returns:
         bool: True if config file was created, False if it already existed (overwrite)
     """
-    
+
     # First create the SMM_PATH if it doesn't exist
     if not SMM_PATH.exists():
         SMM_PATH.mkdir(parents=True)
-        
+
     # Create default mountfiles dir if it doesn't exist
     if not DEFAULT_MOUNTFILES_DIR.exists():
         DEFAULT_MOUNTFILES_DIR.mkdir(parents=True)
@@ -159,50 +160,34 @@ def write_default_config(force: bool = False) -> bool:
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
 
-    if config_already_existed:    # then we overwrote it (we return False)
+    if config_already_existed:  # then we overwrote it (we return False)
         return False
-    else:                         # otherwise we created it. (We return True)
+    else:  # otherwise we created it. (We return True)
         return True
 
 
-# def save_settings(settings_payload: SettingsPayload) -> None:
-#     """Save settings to config file
-#     Note that this function does not validate the settings payload, it only
-#     compares the current settings with the new settings and runs functions
-#     to update the settings where necessary.
-#     It is up to the GUI to validate the settings before saving."""
-
-#     # First we need to compare the settings payload to see what has changed
-
-#     if config["DEFAULT"]["managed_mounts_dir"] != settings_payload.managed_mounts_dir:
-#         change_managed_mounts_dir(settings_payload.managed_mounts_dir)
-
-#     # Use configparser to write to file
-#     with open(CONFIG_PATH, "w") as configfile:
-#         config.write(configfile)
-
-
 def load_settings() -> SettingsPayload:
-    """Load settings from config file"""
+    """Load settings from config file. Returns a SettingsPayload object.
+    Import the SettingsPayload dataclass for type checking."""
 
     return SettingsPayload(managed_mounts_dir=config["DEFAULT"]["managed_mounts_dir"])
 
 
 def change_managed_mounts_dir(new_dir: str, migrate: bool = False):
     """Change the managed mounts directory
-    
+
     Raises:
         ValueError: if new_dir is the same as the current dir
         OSError: if there is a problem creating the new directory
     """
-    
+
     # First convert the string to a path object
     new_path = Path(new_dir).resolve()
 
     # Ensure new dir is not the same as the current dir
     if config["DEFAULT"]["managed_mounts_dir"] == new_dir:
         raise ValueError("New managed mounts dir is the same as the current dir")
-            
+
     try:
         new_path.mkdir(parents=True, exist_ok=True)
     except OSError as e:
@@ -221,14 +206,18 @@ def change_managed_mounts_dir(new_dir: str, migrate: bool = False):
             case errno.ENOTDIR:
                 raise OSError("Cannot create directory: Invalid parent path (file in path)") from e
             case errno.ESTALE:
-                raise OSError("Cannot create directory: Network mount is stale or unavailable") from e
+                raise OSError(
+                    "Cannot create directory: Network mount is stale or unavailable"
+                ) from e
             case errno.EHOSTUNREACH | errno.EHOSTDOWN | errno.ENETUNREACH | errno.ENETDOWN:
                 raise OSError("Cannot create directory: Network or host is unreachable") from e
             case errno.EIO:
-                raise OSError("Cannot create directory: I/O error (possible network or disk issue)") from e
+                raise OSError(
+                    "Cannot create directory: I/O error (possible network or disk issue)"
+                ) from e
             case _:
                 raise OSError(f"Cannot create directory: {e}") from e
-    
+
     try:
         testfile = new_path / ".testfile"
         testfile.touch()
@@ -244,21 +233,21 @@ def change_managed_mounts_dir(new_dir: str, migrate: bool = False):
                 raise OSError("You don't have permission to write to that directory") from e
             case _:
                 raise OSError(f"Error changing directory: {e}") from e
-    
+
     if migrate:
         # here add migrate logic when ready
         pass
-    
+
     # If migration was skipped or successful then we can update the config file
     config["DEFAULT"]["managed_mounts_dir"] = new_dir
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
 
 
-
 # ======================================================= #
 #                SUDO / SUBPROCESS RELATED
 # ======================================================= #
+
 
 def check_sudo_cached() -> bool:
     """Check if sudo credentials are already cached
@@ -358,10 +347,52 @@ def run_stdio_mode():
             sys.stdout.flush()
 
 
-
 # ======================================================= #
 #                    MOUNTS RELATED
 # ======================================================= #
+
+# System Mount Categories
+
+# -.mount (Root Mount)
+
+# - The root filesystem (/)
+# - Core to the system, should never be touched by users
+
+# dev-* mounts (Device filesystems)
+
+# - dev-hugepages.mount: Virtual filesystem for large memory pages
+# - dev-mqueue.mount: POSIX message queues for inter-process communication
+# - Essential kernel interfaces, not user-manageable
+
+# proc-* mounts (Process filesystems)
+
+# - proc-sys-fs-binfmt_misc.mount: Allows registering binary formats (like running Windows .exe files through Wine)
+# - Kernel interface, typically left alone
+
+# sys-* mounts (System filesystems)
+
+# - sys-fs-fuse-connections.mount: FUSE filesystem management
+# - sys-kernel-config.mount: Kernel module configuration
+# - sys-kernel-debug.mount: Kernel debugging info
+# - sys-kernel-tracing.mount: Kernel event tracing
+# - All kernel interfaces, not user-manageable
+
+# run-* mounts (Runtime filesystems)
+
+# - run-rpc_pipefs.mount: NFS client communication
+# - run-user-1000.mount and friends: User session runtime directories
+# - Dynamically managed by systemd, shouldn't be manually controlled
+
+# Mount detecting logic flow:
+
+# Get all mount unit files  - systemctl list-unit-files --type=mount
+# Get current mount states  - systemctl list-units --type=mount --all --no-legend
+# Check for automounts      - systemctl list-units --type=automount --all
+# Verify actual mounts      - findmnt or parse /proc/mounts
+# Look for fstab mounts     - ls /run/systemd/generator/*.mount
+# Look for transient mounts - ls /run/systemd/transient/*.mount
+# Use `systemctl show <unit> -p FragmentPath` to get the exact file path
+
 
 class SystemctlListUnitsLine(NamedTuple):
     """
@@ -381,6 +412,9 @@ class SystemctlListUnitsLine(NamedTuple):
 
 
 def detect_exising_mounts() -> list[SystemctlListUnitsLine]:
+    """Runs `systemctl list-units --type=mount --all --no-legend` and returns a list
+    of SystemctlListUnitsLine objects."""
+
     # First hit systemctl, get giant string returned
     result = run_command(["systemctl", "list-units", "--type=mount", "--all", "--no-legend"])
 
@@ -389,7 +423,7 @@ def detect_exising_mounts() -> list[SystemctlListUnitsLine]:
     for line in result.stdout.splitlines():
         lines_split = line.split()
         if lines_split[0] == "●":
-            lines_split.pop(0)
+            continue
         mounts_list_normalized.append(
             SystemctlListUnitsLine(
                 unit=lines_split[0],
@@ -401,18 +435,6 @@ def detect_exising_mounts() -> list[SystemctlListUnitsLine]:
         )
 
     return mounts_list_normalized
-
-    # unit_name = line.split()[0]
-    # fragment = run_command(["systemctl", "show", "-p", "FragmentPath", unit_name])
-    # if str(DEFAULT_MOUNTFILES_DIR) in fragment.stdout:
-    #     # Your mount
-    #     pass
-    # elif "/run/systemd/generator/" in fragment.stdout:
-    #     # fstab mount
-    #     pass
-    # elif not fragment.stdout.strip().split("=")[1]:
-    #     # transient mount
-    #     pass
 
 
 def create_mount_file(mount_payload: MountPayload) -> str:

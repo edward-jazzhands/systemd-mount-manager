@@ -1,5 +1,9 @@
 # This removes the focus highlight from text on buttons
-Button {&:focus {text-style: none;}}
+Button {&:focus {
+    text-style: none;
+    background: $primary-darken-2;
+    color: $text;
+}}
 
 # Mixins
 .h1 { height: 1; }

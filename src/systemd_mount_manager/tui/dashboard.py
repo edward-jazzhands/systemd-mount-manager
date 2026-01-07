@@ -5,13 +5,13 @@ Contains the dashboard for Systemd Mount Manager.
 # Python imports
 from __future__ import annotations
 from enum import Enum
-from typing import Any  # , cast
+from typing import NamedTuple  # , cast
 
 # import sys
 # from dataclasses import dataclass
 
 # Textual imports
-from textual import on  # , log
+from textual import on, work  # , log
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, ScrollableContainer
 from textual.widgets import TabPane, Placeholder, Button
@@ -19,7 +19,7 @@ from textual.binding import Binding
 from textual.widgets import Static, DataTable, Switch  # , Button, Select
 
 # Local imports
-from systemd_mount_manager.logic import detect_exising_mounts, SystemctlListUnitsLine
+import systemd_mount_manager.logic as logic
 
 
 class ShareStatus(Enum):
@@ -130,21 +130,9 @@ class DiscoveredMountHeader(Horizontal):
     def compose(self) -> ComposeResult:
         yield Static("Discovered Mounts", classes="compact-static")
         yield Container()
-        yield Button("Button 1", id="button1", compact=True)
-        yield Button("Button 2", id="button2", compact=True)
-        yield Button("Button 3", id="button3", compact=True)
-
-    @on(Button.Pressed, "#button1")
-    def button1_pressed(self) -> None:
-        self.notify("button1_pressed")
-
-    @on(Button.Pressed, "#button2")
-    def button2_pressed(self) -> None:
-        self.notify("button2_pressed")
-
-    @on(Button.Pressed, "#button3")
-    def button3_pressed(self) -> None:
-        self.notify("button3_pressed")
+        yield Button("Non-System Mounts", id="non-system-mounts-button", compact=True)
+        yield Button("Active Mounts", id="active-mounts-button", compact=True)
+        yield Button("All Mounts", id="all-mounts-button", compact=True)
 
 
 class DiscoveredMounts(Container):
@@ -164,10 +152,46 @@ class DiscoveredMounts(Container):
         yield DiscoveredMountHeader(classes="h2")
         yield self.table
 
-    def on_mount(self):
+    async def on_mount(self):
+        worker = self.load_existing_mounts()
+        self.mounts_list = await worker.wait()
+        self.show_nonsystem_mounts(self.mounts_list)
 
-        existing = detect_exising_mounts()  #    existing is a list of NamedTuples
-        self.table.add_rows(existing)  #     add_rows takes an iterable of iterables
+    @work(exit_on_error=False)
+    async def load_existing_mounts(self) -> list[logic.SystemctlListUnitsLine]:
+        # NOTE: Add error handling at some point.
+        return logic.detect_exising_mounts()  #    existing is a list of NamedTuples
+
+    def show_nonsystem_mounts(self, mounts_list: list[logic.SystemctlListUnitsLine]) -> None:
+        self.table.clear()
+        # add_rows takes an iterable of iterables
+        self.table.add_rows(
+            [
+                mount
+                for mount in mounts_list
+                if not mount.unit.startswith(("sys-", "dev-", "proc-", "run-", "-."))
+            ]
+        )
+
+    def show_all_mounts(self, mounts_list: list[logic.SystemctlListUnitsLine]) -> None:
+        self.table.clear()
+        self.table.add_rows(mounts_list)
+
+    def show_active_mounts(self, mounts_list: list[logic.SystemctlListUnitsLine]) -> None:
+        self.table.clear()
+        self.table.add_rows([mount for mount in mounts_list if mount.active == "active"])
+
+    @on(Button.Pressed, "#non-system-mounts-button")
+    def non_system_mounts_button_pressed(self) -> None:
+        self.show_nonsystem_mounts(self.mounts_list)
+
+    @on(Button.Pressed, "#active-mounts-button")
+    def active_mounts_button_pressed(self) -> None:
+        self.show_active_mounts(self.mounts_list)
+
+    @on(Button.Pressed, "#all-mounts-button")
+    def all_mounts_button_pressed(self) -> None:
+        self.show_all_mounts(self.mounts_list)
 
 
 class DashBoard(TabPane):
