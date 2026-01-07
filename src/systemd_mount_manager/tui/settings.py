@@ -28,7 +28,9 @@ from textual.containers import (
 )
 from textual.binding import Binding
 from textual.screen import ModalScreen
+import textual_fspicker as fspicker
 
+# Local imports
 import systemd_mount_manager.logic as logic
 
 # [ ]: Add validation for input fields
@@ -159,6 +161,7 @@ class ChangeManagedMountsDirScreen(ModalScreen[MountsDirScreenResult]):
 class SettingType(Enum):
     INPUT = 1
     SWITCH = 2
+    BUTTON = 3
 
 
 class SettingOption(Container):
@@ -182,10 +185,14 @@ class SettingOption(Container):
     def compose(self) -> ComposeResult:
         with Horizontal(classes="setting-option-header"):
             yield Static(self.description, classes="setting-description")
+            # if its a switch or button, yield in same horizontal
             if self.setting_type == SettingType.SWITCH:
                 yield Container()
                 yield Switch(id=self.widget_id)
                 self.add_class("h3")
+            elif self.setting_type == SettingType.BUTTON:
+                yield Container()
+                yield Button(self.value_str, id=self.widget_id)
         if self.setting_type == SettingType.INPUT:
             yield Input(
                 self.value_str,
@@ -209,6 +216,16 @@ class SettingsTab(TabPane):
                     setting_type=SettingType.INPUT,
                     validator=ValidPath(),
                 )
+                # yield SettingOption(
+                #     widget_id="fspicker-button",
+                #     description="Choose a directory to store managed mounts",
+                #     value_str="Click to choose",
+                #     setting_type=SettingType.BUTTON,
+                # )
+                with Horizontal(classes="h2"):
+                    yield Container()
+                    yield Static("Choose a directory to store managed mounts", classes="compact-static")
+                    yield Button("Choose", id="fspicker-button", compact=True)
                 yield SettingOption(
                     widget_id="smb-share",
                     description="The SMB share to mount (some extra info here)",
@@ -232,6 +249,13 @@ class SettingsTab(TabPane):
     def load_settings(self) -> None:
         settings_payload = logic.load_settings()
         self.query_one("#managed-mounts-dir", Input).value = settings_payload.managed_mounts_dir
+
+    @on(Button.Pressed, "#fspicker-button")
+    @work(exit_on_error=False)
+    async def fspicker_button_pressed(self, event: Button.Pressed) -> None:
+        result = await self.app.push_screen_wait(fspicker.SelectDirectory(location=Path.home()))
+        if result:
+            self.query_one("#managed-mounts-dir", Input).value = result.as_posix()
 
     @on(Switch.Changed, "#test-switch")
     def switch_changed(self, event: Switch.Changed) -> None:
