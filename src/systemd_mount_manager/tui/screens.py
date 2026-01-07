@@ -36,7 +36,7 @@ class HelpScreen(ModalScreen[None]):
         with resources.open_text("systemd_mount_manager", "help.md") as f:
             self.help = f.read()
 
-        with VerticalScroll(id="help-container"):
+        with VerticalScroll(classes="help-container"):
             yield Markdown(self.help)
 
     def on_mount(self) -> None:

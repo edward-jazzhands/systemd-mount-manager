@@ -99,7 +99,6 @@ class TextualApp(App[None]):
     def on_mount(self) -> None:
 
         self.content_switcher = self.query_one(ContentSwitcher)  # optimize querying
-        self.log("Mount successful")
         if self.config_overwritten:
             self.log("Config file was overwritten with default values")
         else:

@@ -1,6 +1,5 @@
 # python standard lib
 from __future__ import annotations
-
 import sys
 from typing import Sequence, NamedTuple
 import subprocess
@@ -9,10 +8,12 @@ from pathlib import Path
 from dataclasses import dataclass
 from enum import StrEnum
 from textwrap import dedent
+import errno
 from configparser import ConfigParser
-from textual import log
 
 # Third party
+from textual import log
+
 # from ezpubsub import Signal, SignalError
 
 
@@ -110,19 +111,19 @@ class TextualLogWriter:
 
 _log_writer = TextualLogWriter()
 
-# ==============================================================================#
-
-if not SMM_PATH.exists():
-    SMM_PATH.mkdir(parents=True)
+# ======================================================= #
+#                     CONFIG RELATED
+# ======================================================= #
 
 config = ConfigParser()
 # If this is first run, this file will not exist yet and this will do nothing:
 read_files = config.read(CONFIG_PATH)
 
-
-def get_config() -> ConfigParser:
-    "Alias for config"
-    return config
+# A small helper to log current config to Textual console, for debugging
+def textual_log_config_file() -> None:
+    log("Config file:")
+    config.write(_log_writer)
+    _log_writer.flush()
 
 
 def write_default_config(force: bool = False) -> bool:
@@ -136,50 +137,49 @@ def write_default_config(force: bool = False) -> bool:
     Returns:
         bool: True if config file was created, False if it already existed (overwrite)
     """
+    
+    # First create the SMM_PATH if it doesn't exist
+    if not SMM_PATH.exists():
+        SMM_PATH.mkdir(parents=True)
+        
+    # Create default mountfiles dir if it doesn't exist
+    if not DEFAULT_MOUNTFILES_DIR.exists():
+        DEFAULT_MOUNTFILES_DIR.mkdir(parents=True)
 
-    configfile = CONFIG_PATH
-    config_already_exists = False
-    if configfile.exists():
+    config_already_existed = False
+    if CONFIG_PATH.exists():
         if not force:
-            raise FileExistsError(f"Config file already exists: {configfile}")
-        config_already_exists = True
+            raise FileExistsError(f"Config file already exists: {CONFIG_PATH.as_posix()}")
+        config_already_existed = True
 
+    # Here create the default config
     config["DEFAULT"] = {
         "managed_mounts_dir": DEFAULT_MOUNTFILES_DIR.as_posix(),
     }
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
 
-    # if the config already exists, it means we overwrote it (we return False)
-    # if create_already_exists is False, it means we created it. (We return True)
-    return not config_already_exists
+    if config_already_existed:    # then we overwrote it (we return False)
+        return False
+    else:                         # otherwise we created it. (We return True)
+        return True
 
 
-def change_managed_mounts_dir(new_dir: str) -> None:
-    """Change the managed mounts directory"""
+# def save_settings(settings_payload: SettingsPayload) -> None:
+#     """Save settings to config file
+#     Note that this function does not validate the settings payload, it only
+#     compares the current settings with the new settings and runs functions
+#     to update the settings where necessary.
+#     It is up to the GUI to validate the settings before saving."""
 
-    # first convert the string to a path object
-    new_path = Path(new_dir)
+#     # First we need to compare the settings payload to see what has changed
 
-    config["DEFAULT"]["managed_mounts_dir"] = new_dir.as_posix()
+#     if config["DEFAULT"]["managed_mounts_dir"] != settings_payload.managed_mounts_dir:
+#         change_managed_mounts_dir(settings_payload.managed_mounts_dir)
 
-    with open(CONFIG_PATH, "w") as configfile:
-        config.write(configfile)
-
-
-def save_settings(settings_payload: SettingsPayload) -> None:
-    """Save settings to config file"""
-
-    # First load new settings into configparser memory
-
-    # Compare old managed mounts dir with new managed mounts dir
-    if config["DEFAULT"]["managed_mounts_dir"] != settings_payload.managed_mounts_dir:
-        # If the new managed mounts dir is different from the old one,
-        change_managed_mounts_dir(new_dir)
-
-    # Use configparser to write to file
-    with open(CONFIG_PATH, "w") as configfile:
-        config.write(configfile)
+#     # Use configparser to write to file
+#     with open(CONFIG_PATH, "w") as configfile:
+#         config.write(configfile)
 
 
 def load_settings() -> SettingsPayload:
@@ -188,11 +188,77 @@ def load_settings() -> SettingsPayload:
     return SettingsPayload(managed_mounts_dir=config["DEFAULT"]["managed_mounts_dir"])
 
 
-def textual_log_config_file() -> None:
-    log("Config file:")
-    config.write(_log_writer)
-    _log_writer.flush()
+def change_managed_mounts_dir(new_dir: str, migrate: bool = False):
+    """Change the managed mounts directory
+    
+    Raises:
+        ValueError: if new_dir is the same as the current dir
+        OSError: if there is a problem creating the new directory
+    """
+    
+    # First convert the string to a path object
+    new_path = Path(new_dir).resolve()
 
+    # Ensure new dir is not the same as the current dir
+    if config["DEFAULT"]["managed_mounts_dir"] == new_dir:
+        raise ValueError("New managed mounts dir is the same as the current dir")
+            
+    try:
+        new_path.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        log.error(e)
+        match e.errno:
+            case errno.ENOSPC:
+                raise OSError("Cannot create directory: No space left on device") from e
+            case errno.EROFS:
+                raise OSError("Cannot create directory: Read-only filesystem") from e
+            case errno.ENAMETOOLONG:
+                raise OSError("Cannot create directory: Path name too long") from e
+            case errno.EACCES | errno.EPERM:
+                raise OSError("Cannot create directory: Permission denied") from e
+            case errno.EEXIST:
+                raise OSError("Cannot create directory: A file exists at that location") from e
+            case errno.ENOTDIR:
+                raise OSError("Cannot create directory: Invalid parent path (file in path)") from e
+            case errno.ESTALE:
+                raise OSError("Cannot create directory: Network mount is stale or unavailable") from e
+            case errno.EHOSTUNREACH | errno.EHOSTDOWN | errno.ENETUNREACH | errno.ENETDOWN:
+                raise OSError("Cannot create directory: Network or host is unreachable") from e
+            case errno.EIO:
+                raise OSError("Cannot create directory: I/O error (possible network or disk issue)") from e
+            case _:
+                raise OSError(f"Cannot create directory: {e}") from e
+    
+    try:
+        testfile = new_path / ".testfile"
+        testfile.touch()
+        testfile.unlink()
+    except OSError as e:
+        log.error(e)
+        match e.errno:
+            case errno.ENOSPC:
+                raise OSError("Directory change failed: No space left on device") from e
+            case errno.EROFS:
+                raise OSError("You can't write to that directory: Read-only filesystem") from e
+            case errno.EACCES | errno.EPERM:
+                raise OSError("You don't have permission to write to that directory") from e
+            case _:
+                raise OSError(f"Error changing directory: {e}") from e
+    
+    if migrate:
+        # here add migrate logic when ready
+        pass
+    
+    # If migration was skipped or successful then we can update the config file
+    config["DEFAULT"]["managed_mounts_dir"] = new_dir
+    with open(CONFIG_PATH, "w") as configfile:
+        config.write(configfile)
+
+
+
+# ======================================================= #
+#                SUDO / SUBPROCESS RELATED
+# ======================================================= #
 
 def check_sudo_cached() -> bool:
     """Check if sudo credentials are already cached
@@ -291,6 +357,11 @@ def run_stdio_mode():
             print(json.dumps({"status": "error", "error": str(e)}))
             sys.stdout.flush()
 
+
+
+# ======================================================= #
+#                    MOUNTS RELATED
+# ======================================================= #
 
 class SystemctlListUnitsLine(NamedTuple):
     """
