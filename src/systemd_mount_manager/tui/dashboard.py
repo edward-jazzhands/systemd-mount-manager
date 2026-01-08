@@ -5,7 +5,7 @@ Contains the dashboard for Systemd Mount Manager.
 # Python imports
 from __future__ import annotations
 from enum import Enum
-from typing import NamedTuple  # , cast
+# from typing import NamedTuple  # , cast
 
 # import sys
 # from dataclasses import dataclass
@@ -14,9 +14,9 @@ from typing import NamedTuple  # , cast
 from textual import on, work  # , log
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, ScrollableContainer
-from textual.widgets import TabPane, Placeholder, Button
-from textual.binding import Binding
-from textual.widgets import Static, DataTable, Switch  # , Button, Select
+from textual.widgets import TabPane, Button
+# from textual.binding import Binding
+from textual.widgets import Static, DataTable #, Switch  # , Button, Select
 
 # Local imports
 import systemd_mount_manager.logic as logic
@@ -34,6 +34,7 @@ class ShareType(Enum):
 
 
 class ManagedMount(Horizontal):
+    
     def __init__(
         self,
         share_name: str,
@@ -52,16 +53,18 @@ class ManagedMount(Horizontal):
         yield Static(self.share_target, classes="mount-data-box share-type")
         yield Static(self.share_type.name, classes="mount-data-box share-target")
         yield Static(self.share_status.name, classes="mount-data-box share-status")
+        yield Static(self.share_status.name, classes="mount-data-box share-description")
 
 
 class ManagedMountHeader(Container):
+    
     def compose(self) -> ComposeResult:
         with Horizontal():
-            yield Static("Managed Mounts", classes="compact-static")
-            yield Container()
-            yield Button("Button 1", id="button1", compact=True)
-            yield Button("Button 2", id="button2", compact=True)
-            yield Button("Button 3", id="button3", compact=True)
+            yield Static("Managed Mounts", classes="w1fr margin-0-1")
+            # yield Container()
+            # yield Button("Button 1", id="button1", compact=True)
+            # yield Button("Button 2", id="button2", compact=True)
+            # yield Button("Button 3", id="button3", compact=True)
 
         with Horizontal(id="mount-col-names"):
             yield Static("Name", classes="mount-data-box")
@@ -69,40 +72,52 @@ class ManagedMountHeader(Container):
             yield Static("Type", classes="mount-data-box")
             yield Static("Status", classes="mount-data-box")
 
-    @on(Button.Pressed, "#button1")
-    def button1_pressed(self) -> None:
-        self.notify("button1_pressed")
+    # @on(Button.Pressed, "#button1")
+    # def button1_pressed(self) -> None:
+    #     self.notify("button1_pressed")
 
-    @on(Button.Pressed, "#button2")
-    def button2_pressed(self) -> None:
-        self.notify("button2_pressed")
+    # @on(Button.Pressed, "#button2")
+    # def button2_pressed(self) -> None:
+    #     self.notify("button2_pressed")
 
-    @on(Button.Pressed, "#button3")
-    def button3_pressed(self) -> None:
-        self.notify("button3_pressed")
+    # @on(Button.Pressed, "#button3")
+    # def button3_pressed(self) -> None:
+    #     self.notify("button3_pressed")
 
 
 class ManagedMounts(Container):
-    def __init__(self) -> None:
-        super().__init__(classes="card-container")
-        self.share_mounts: list[ManagedMount] = []
-
-        # Dummy Data
-        self.share_mounts.append(
-            ManagedMount("My Share 1", "//my-share/data", ShareType.SMB, ShareStatus.CONNECTED)
-        )
-        self.share_mounts.append(
-            ManagedMount("My Share 2", "//my-share2/data", ShareType.NFS, ShareStatus.IDLE)
-        )
-        self.share_mounts.append(
-            ManagedMount("My Share 3", "//my-share3/data", ShareType.SMB, ShareStatus.FAILED)
-        )
+        
+    # Ways to get mounts into program:
+    # 1) Use add mount wizard page
+    # 2) Copy and paste the files into managed mounts dir
+    # 3) Detect existing mount files in /etc/systemd/system and offer to migrate them
+    # 4) Get the mounts from /run/systemd/generator/*.mount (fstab mounts migration)
+    # 5) Get the mounts from /run/systemd/transient/*.mount (transient mounts migration)
 
     def compose(self) -> ComposeResult:
+        self.mounts_list = []
+        self.log("Composing ManagedMounts")
         yield ManagedMountHeader(classes="h3")
-        for item in self.share_mounts:
-            yield item
 
+    async def on_mount(self):
+        self.log("Mounted ManagedMounts")
+        
+        worker = self.load_managed_mounts()
+        self.mounts_list = await worker.wait()
+        if not self.mounts_list:
+            self.mount(Static("No mounts found", classes="no-mounts-found"))
+        # for item in self.mounts_list:
+            # yield ManagedMount(item.name, item.target, item.type, item.status, item.description)
+
+    @work(exit_on_error=False)
+    async def load_managed_mounts(self):
+        self.log("Loading managed mounts")
+        logic.mounts.list_managed_mounts_data() 
+
+
+    # @on(Button.Pressed, "#non-system-mounts-button")
+    # def non_system_mounts_button_pressed(self) -> None:
+    #     self.show_nonsystem_mounts(self.mounts_list)
 
 class DiscoveredMount(Horizontal):
     def __init__(
@@ -136,9 +151,6 @@ class DiscoveredMountHeader(Horizontal):
 
 
 class DiscoveredMounts(Container):
-    def __init__(self) -> None:
-        super().__init__(classes="card-container")
-        self.share_mounts: list[DiscoveredMount] = []
 
     def compose(self) -> ComposeResult:
         self.table = DataTable[str](id="existing-mounts-table")
@@ -153,16 +165,17 @@ class DiscoveredMounts(Container):
         yield self.table
 
     async def on_mount(self):
-        worker = self.load_existing_mounts()
+        self.log("Mounted DiscoveredMounts")
+        worker = self.detect_existing_mounts()
         self.mounts_list = await worker.wait()
         self.show_nonsystem_mounts(self.mounts_list)
 
     @work(exit_on_error=False)
-    async def load_existing_mounts(self) -> list[logic.SystemctlListUnitsLine]:
+    async def detect_existing_mounts(self) -> list[logic.mounts.SystemctlListUnitsLine]:
         # NOTE: Add error handling at some point.
-        return logic.detect_exising_mounts()  #    existing is a list of NamedTuples
+        return logic.mounts.detect_exising_mounts()  #    existing is a list of NamedTuples
 
-    def show_nonsystem_mounts(self, mounts_list: list[logic.SystemctlListUnitsLine]) -> None:
+    def show_nonsystem_mounts(self, mounts_list: list[logic.mounts.SystemctlListUnitsLine]) -> None:
         self.table.clear()
         # add_rows takes an iterable of iterables
         self.table.add_rows(
@@ -173,11 +186,11 @@ class DiscoveredMounts(Container):
             ]
         )
 
-    def show_all_mounts(self, mounts_list: list[logic.SystemctlListUnitsLine]) -> None:
+    def show_all_mounts(self, mounts_list: list[logic.mounts.SystemctlListUnitsLine]) -> None:
         self.table.clear()
         self.table.add_rows(mounts_list)
 
-    def show_active_mounts(self, mounts_list: list[logic.SystemctlListUnitsLine]) -> None:
+    def show_active_mounts(self, mounts_list: list[logic.mounts.SystemctlListUnitsLine]) -> None:
         self.table.clear()
         self.table.add_rows([mount for mount in mounts_list if mount.active == "active"])
 
@@ -197,5 +210,6 @@ class DiscoveredMounts(Container):
 class DashBoard(TabPane):
     def compose(self) -> ComposeResult:
         with ScrollableContainer(classes="content-container"):
-            yield ManagedMounts()
-            yield DiscoveredMounts()
+            self.log("Composing DashBoard")
+            yield ManagedMounts(classes="card-container")
+            yield DiscoveredMounts(classes="card-container")

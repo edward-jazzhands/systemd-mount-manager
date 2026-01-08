@@ -26,6 +26,7 @@ Button {
 .boost { background: $boost; }
 .margin-1-0 { margin: 1 0; }
 .margin-0-1 { margin: 0 1; }
+.border-1 { border: outer $panel; }
 
 
 .compact-static {
@@ -152,6 +153,15 @@ SettingOption {
         # border: solid red;
         # scrollbar-visibility: hidden;
     }
+}
+
+.no-mounts-found {
+    width: 1fr;
+    border: outer $surface-darken-1;
+    margin: 1;
+    content-align: center middle;
+    height: 5;
+    # background: $surface-lighten-2;
 }
 
 FstabsCard {

@@ -8,7 +8,7 @@ Contains the TUI interface for Systemd Mount Manager.
 
 # Python imports
 from __future__ import annotations
-from typing import Any  # , cast
+# from typing import Any  # , cast
 import sys
 from dataclasses import dataclass
 
@@ -16,8 +16,8 @@ from dataclasses import dataclass
 from textual import on  # , log
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
-from textual.widget import Widget
-from textual.widgets import TabPane, TabbedContent, Placeholder
+# from textual.widget import Widget
+from textual.widgets import TabbedContent
 from textual.binding import Binding
 from textual.widgets import Footer, Static, ContentSwitcher  # , Button, Select
 
@@ -77,7 +77,7 @@ class TextualApp(App[None]):
         # self.app_data.display = False
         self.config_overwritten = False
         if debug:
-            config_write_result = logic.write_default_config(force=True)
+            config_write_result = logic.config.write_default_config(force=True)
             # result will be False if config file already existed (overwrite)
             self.config_overwritten = config_write_result is False
 
@@ -114,7 +114,7 @@ class TextualApp(App[None]):
         self.push_screen(HelpScreen())
 
     def action_log_config_file(self) -> None:
-        logic.textual_log_config_file()
+        logic.config.textual_log_config_file()
 
     def action_log_DOM_tree(self) -> None:
         self.log(self.tree)

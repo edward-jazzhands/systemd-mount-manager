@@ -38,7 +38,7 @@ def stdio_mode() -> None:
     """stdio mode - read commands from stdin, write responses to stdout.
     This is intended for scripting or interfacing with the app from other programs."""
 
-    logic.run_stdio_mode()
+    logic.core.run_stdio_mode()
 
 
 def is_graphical_session(debug: bool) -> bool:
@@ -74,7 +74,7 @@ def is_graphical_session(debug: bool) -> bool:
 def initialize_app() -> None:
 
     try:
-        logic.write_default_config()
+        logic.config.write_default_config()
     except FileExistsError:
         debug_msg("Config file already exists, skipping creation", True)
 

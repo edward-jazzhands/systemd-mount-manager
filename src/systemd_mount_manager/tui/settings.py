@@ -9,7 +9,7 @@ from pathlib import Path
 
 # from asyncio import Await
 
-from typing import Awaitable  # , cast
+# from typing import Awaitable  # , cast
 
 # import sys
 # from dataclasses import dataclass
@@ -247,7 +247,7 @@ class SettingsTab(TabPane):
     #     self.load_settings()
 
     def load_settings(self) -> None:
-        settings_payload = logic.load_settings()
+        settings_payload = logic.config.load_settings()
         self.query_one("#managed-mounts-dir", Input).value = settings_payload.managed_mounts_dir
 
     @on(Button.Pressed, "#fspicker-button")
@@ -295,8 +295,8 @@ class SettingsTab(TabPane):
             return
 
         # Compare old values with new values
-        if new_dir_as_posix != logic.config["DEFAULT"]["managed_mounts_dir"]:
-            current_dir_path = Path(logic.config["DEFAULT"]["managed_mounts_dir"])
+        if new_dir_as_posix != logic.config.config["DEFAULT"]["managed_mounts_dir"]:
+            current_dir_path = Path(logic.config.config["DEFAULT"]["managed_mounts_dir"])
             result = await self.app.push_screen_wait(
                 ChangeManagedMountsDirScreen(new_dir_path, current_dir_path)
             )
@@ -304,7 +304,7 @@ class SettingsTab(TabPane):
                 return
             migrate = result == MountsDirScreenResult.PROCEED_WITH_MIGRATE
             try:
-                logic.change_managed_mounts_dir(new_dir_as_posix, migrate=migrate)
+                logic.config.change_managed_mounts_dir(new_dir_as_posix, migrate=migrate)
             except (ValueError, OSError) as e:
                 self.log(f"Error: {e}")
                 self.notify(f"Error: {e}")
