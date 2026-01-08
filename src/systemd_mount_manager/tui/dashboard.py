@@ -5,7 +5,7 @@ Contains the dashboard for Systemd Mount Manager.
 # Python imports
 from __future__ import annotations
 from enum import Enum
-# from typing import NamedTuple  # , cast
+from typing import cast
 
 # import sys
 # from dataclasses import dataclass
@@ -13,10 +13,12 @@ from enum import Enum
 # Textual imports
 from textual import on, work  # , log
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, ScrollableContainer
-from textual.widgets import TabPane, Button
+from textual.containers import Container, Horizontal, VerticalScroll
+from textual.widgets import TabPane, Button, ContentSwitcher
 # from textual.binding import Binding
 from textual.widgets import Static, DataTable #, Switch  # , Button, Select
+from rich.text import Text
+
 
 # Local imports
 import systemd_mount_manager.logic as logic
@@ -33,27 +35,42 @@ class ShareType(Enum):
     NFS = 2
 
 
-class ManagedMount(Horizontal):
+class ManagedMountWidget(Horizontal):
     
-    def __init__(
-        self,
-        share_name: str,
-        share_target: str,
-        share_type: ShareType,
-        share_status: ShareStatus,
-    ) -> None:
+    # UnitSection:
+    #     description: str
+    #     requires: str | None
+    #     after: str | None
+        
+    # MountSection:
+    #     what: str
+    #     where: str
+    #     type: str
+    #     options: str
+    #     timeoutsec: str
+        
+    # AutomountSection:
+    #     where: str
+    #     timeoutidlesec: str
+
+    # InstallSection:
+    #     wantedby: str    
+    
+    
+    def __init__(self, mount_data: logic.mounts.ManagedMountData) -> None:
         super().__init__()
-        self.share_name = share_name
-        self.share_target = share_target
-        self.share_type = share_type
-        self.share_status = share_status
+        self.type: logic.mounts.MountType
+        self.mount_data = mount_data
+        if isinstance(mount_data.mount, logic.mounts.ManagedMountMountSection):
+            self.type = logic.mounts.MountType.MOUNT_AT_BOOT
+        else:   # must be MountType.MOUNT_LAZILY
+            self.type = logic.mounts.MountType.AUTOMOUNT
 
     def compose(self) -> ComposeResult:
-        yield Static(self.share_name, classes="mount-data-box share-name")
-        yield Static(self.share_target, classes="mount-data-box share-type")
-        yield Static(self.share_type.name, classes="mount-data-box share-target")
-        yield Static(self.share_status.name, classes="mount-data-box share-status")
-        yield Static(self.share_status.name, classes="mount-data-box share-description")
+        yield Static(self.mount_data.unit.description, classes="mount-data-box")
+        yield Static(self.mount_data.mount.where, classes="mount-data-box")
+        yield Static(self.type, classes="mount-data-box")
+        yield Static("UNKNOWN", classes="mount-data-box")
 
 
 class ManagedMountHeader(Container):
@@ -66,11 +83,11 @@ class ManagedMountHeader(Container):
             # yield Button("Button 2", id="button2", compact=True)
             # yield Button("Button 3", id="button3", compact=True)
 
-        with Horizontal(id="mount-col-names"):
-            yield Static("Name", classes="mount-data-box")
-            yield Static("Target", classes="mount-data-box")
-            yield Static("Type", classes="mount-data-box")
-            yield Static("Status", classes="mount-data-box")
+        # with Horizontal(id="mount-col-names"):
+        #     yield Static("Name", classes="mount-data-box")
+        #     yield Static("Mount Point", classes="mount-data-box")
+        #     yield Static("Type", classes="mount-data-box")
+        #     yield Static("Status", classes="mount-data-box")
 
     # @on(Button.Pressed, "#button1")
     # def button1_pressed(self) -> None:
@@ -98,6 +115,7 @@ class ManagedMounts(Container):
         self.mounts_list = []
         self.log("Composing ManagedMounts")
         yield ManagedMountHeader(classes="h3")
+        yield Container(id="managed-mounts-container")
 
     async def on_mount(self):
         self.log("Mounted ManagedMounts")
@@ -106,38 +124,25 @@ class ManagedMounts(Container):
         self.mounts_list = await worker.wait()
         if not self.mounts_list:
             self.mount(Static("No mounts found", classes="no-mounts-found"))
-        # for item in self.mounts_list:
-            # yield ManagedMount(item.name, item.target, item.type, item.status, item.description)
 
     @work(exit_on_error=False)
-    async def load_managed_mounts(self):
+    async def load_managed_mounts(self) -> list[logic.mounts.ManagedMountData]:
+        """Loads the mounts from the managed mounts directory then updates the UI.
+        Returns a list of ManagedMountData objects. This list is not connected to
+        whether the UI was updated successfully."""
+        
         self.log("Loading managed mounts")
-        logic.mounts.list_managed_mounts_data() 
-
-
-    # @on(Button.Pressed, "#non-system-mounts-button")
-    # def non_system_mounts_button_pressed(self) -> None:
-    #     self.show_nonsystem_mounts(self.mounts_list)
-
-class DiscoveredMount(Horizontal):
-    def __init__(
-        self,
-        share_name: str,
-        share_target: str,
-        share_type: ShareType,
-        share_status: ShareStatus,
-    ) -> None:
-        super().__init__()
-        self.share_name = share_name
-        self.share_target = share_target
-        self.share_type = share_type
-        self.share_status = share_status
-
-    def compose(self) -> ComposeResult:
-        yield Static(self.share_name, classes="mount-data-box share-name")
-        yield Static(self.share_target, classes="mount-data-box share-type")
-        yield Static(self.share_type.name, classes="mount-data-box share-target")
-        yield Static(self.share_status.name, classes="mount-data-box share-status")
+        mounts_container = self.query_one("#managed-mounts-container", Container)
+        managed_mounts = logic.mounts.list_managed_mounts_data()
+        for mount_entry_data in managed_mounts:
+            mounts_container.mount(ManagedMountWidget(mount_entry_data))
+            # Note for anyone unfamiliar with Textual: .mount() is a method for updating
+            # the TEXTUAL UI (mounting widgets in containers). It is completely unrelated to systemd.
+            # The word `mount` just has special meaning in Textual. The dual meaning of the word
+            # may appear confusing here. It's mounting a ManagedMountWidget in the Textual UI,
+            # which is only a visual representation of its corresponding mount file. 
+            # This is not actually 'mounting' (aka installing/enabling) the mount units in systemd.
+        return managed_mounts
 
 
 class DiscoveredMountHeader(Horizontal):
@@ -146,14 +151,25 @@ class DiscoveredMountHeader(Horizontal):
         yield Static("Discovered Mounts", classes="compact-static")
         yield Container()
         yield Button("Non-System Mounts", id="non-system-mounts-button", compact=True)
-        yield Button("Active Mounts", id="active-mounts-button", compact=True)
+        yield Button("System Mounts", id="system-mounts-button", compact=True)
         yield Button("All Mounts", id="all-mounts-button", compact=True)
+        yield Button("Refresh", id="refresh-button", compact=True)
+        
+
 
 
 class DiscoveredMounts(Container):
 
+    class TableMode(Enum):
+        NONSYSTEM = 1
+        SYSTEM = 2
+        ALL = 3
+
     def compose(self) -> ComposeResult:
-        self.table = DataTable[str](id="existing-mounts-table")
+        self.table_mode = DiscoveredMounts.TableMode.NONSYSTEM
+        
+        self.table = DataTable[str](id="discovered-mounts-table")
+        self.table.add_column("Mount Type", key="mount_type")
         self.table.add_column("Unit", key="unit")
         self.table.add_column("Load", key="load")
         self.table.add_column("Active", key="active")
@@ -162,54 +178,81 @@ class DiscoveredMounts(Container):
         self.table.cursor_type = "row"
 
         yield DiscoveredMountHeader(classes="h2")
-        yield self.table
+        with ContentSwitcher(initial="discovered-mounts-table"):
+            yield self.table
+            yield Static("No additional user mounts discovered", id="no-mounts-found", classes="no-mounts-found")
 
     async def on_mount(self):
-        self.log("Mounted DiscoveredMounts")
-        worker = self.detect_existing_mounts()
-        self.mounts_list = await worker.wait()
-        self.show_nonsystem_mounts(self.mounts_list)
+        await self.refresh_data().wait()
 
+    @on(Button.Pressed, "#refresh-button")        
     @work(exit_on_error=False)
-    async def detect_existing_mounts(self) -> list[logic.mounts.SystemctlListUnitsLine]:
-        # NOTE: Add error handling at some point.
-        return logic.mounts.detect_exising_mounts()  #    existing is a list of NamedTuples
-
-    def show_nonsystem_mounts(self, mounts_list: list[logic.mounts.SystemctlListUnitsLine]) -> None:
+    async def refresh_data(self) -> None:
+        self.mounts_list = logic.mounts.detect_all_systemd_mounts()
+        self.managed_list = [mount.name for mount in logic.mounts.list_managed_mounts()]
+        match self.table_mode:
+            case DiscoveredMounts.TableMode.NONSYSTEM:
+                self.show_nonsystem_mounts()
+            case DiscoveredMounts.TableMode.SYSTEM:
+                self.show_system_mounts()
+            case DiscoveredMounts.TableMode.ALL:
+                self.show_all_mounts()
+    
+    @on(Button.Pressed, "#non-system-mounts-button")
+    def show_nonsystem_mounts(self) -> None:
+        self.log("Showing non-system mounts")
+        self.table_mode = DiscoveredMounts.TableMode.NONSYSTEM
+        first_filter = [
+            mount
+            for mount in self.mounts_list
+            if not mount.unit.startswith(("sys-", "dev-", "proc-", "run-", "-."))
+        ]
+        unmanaged_filter = [
+            mount
+            for mount in first_filter
+            if mount.unit not in self.managed_list
+        ]
+        if not unmanaged_filter:
+            self.query_one(ContentSwitcher).current = "no-mounts-found"
+            return
+        else:
+            self.query_one(ContentSwitcher).current = "discovered-mounts-table"
+            self.table.clear()
+            self.table.add_rows(unmanaged_filter)
+            
+    @on(Button.Pressed, "#system-mounts-button")
+    def show_system_mounts(self) -> None:
+        self.log("Showing system mounts")
+        self.table_mode = DiscoveredMounts.TableMode.SYSTEM
+        self.query_one(ContentSwitcher).current = "discovered-mounts-table"
         self.table.clear()
-        # add_rows takes an iterable of iterables
         self.table.add_rows(
             [
                 mount
-                for mount in mounts_list
-                if not mount.unit.startswith(("sys-", "dev-", "proc-", "run-", "-."))
+                for mount in self.mounts_list
+                if mount.unit.startswith(("sys-", "dev-", "proc-", "run-", "-."))
             ]
         )
-
-    def show_all_mounts(self, mounts_list: list[logic.mounts.SystemctlListUnitsLine]) -> None:
-        self.table.clear()
-        self.table.add_rows(mounts_list)
-
-    def show_active_mounts(self, mounts_list: list[logic.mounts.SystemctlListUnitsLine]) -> None:
-        self.table.clear()
-        self.table.add_rows([mount for mount in mounts_list if mount.active == "active"])
-
-    @on(Button.Pressed, "#non-system-mounts-button")
-    def non_system_mounts_button_pressed(self) -> None:
-        self.show_nonsystem_mounts(self.mounts_list)
-
-    @on(Button.Pressed, "#active-mounts-button")
-    def active_mounts_button_pressed(self) -> None:
-        self.show_active_mounts(self.mounts_list)
-
+        
     @on(Button.Pressed, "#all-mounts-button")
-    def all_mounts_button_pressed(self) -> None:
-        self.show_all_mounts(self.mounts_list)
+    def show_all_mounts(self) -> None:
+        self.log("Showing all mounts")
+        self.table_mode = DiscoveredMounts.TableMode.ALL
+        self.query_one(ContentSwitcher).current = "discovered-mounts-table"
+        self.table.clear()
+        for mount in self.mounts_list:
+            # highlight the managed mounts
+            if mount.unit in self.managed_list:
+                textized = Text(mount.unit, style="dark_orange")
+                new_row = mount._replace(unit=textized)
+                self.table.add_row(*new_row)
+            else:
+                self.table.add_row(*mount)
 
 
 class DashBoard(TabPane):
     def compose(self) -> ComposeResult:
-        with ScrollableContainer(classes="content-container"):
+        with VerticalScroll(classes="content-container"):
             self.log("Composing DashBoard")
-            yield ManagedMounts(classes="card-container")
+            yield ManagedMounts(classes="card-container horizontal-scroll")
             yield DiscoveredMounts(classes="card-container")

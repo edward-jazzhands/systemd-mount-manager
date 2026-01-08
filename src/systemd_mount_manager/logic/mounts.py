@@ -1,20 +1,20 @@
 # python standard lib
 from __future__ import annotations
 # import sys
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict, NotRequired
 # import subprocess
-# import json
+import json
 from pathlib import Path
 from dataclasses import dataclass
 from enum import StrEnum
-from textwrap import dedent
+# from textwrap import dedent
 # import errno
 import configparser
 
 # Third party
-import rich.rule
+# import rich.rule
 from textual import log
-import rich 
+from rich.text import Text
 
 # Local
 import systemd_mount_manager.logic as logic
@@ -70,8 +70,8 @@ DEFAULT_MOUNTFILES_DIR: Path = SMM_PATH / "managed-mounts"
 
 
 class MountType(StrEnum):
-    MOUNT_AT_BOOT = "mount"
-    MOUNT_LAZILY = "automount"
+    MOUNT_AT_BOOT = "Mount at boot"
+    AUTOMOUNT = "Mount on demand"
 
 
 class MountProtocol(StrEnum):
@@ -79,7 +79,7 @@ class MountProtocol(StrEnum):
     NFS = "nfs"
 
 
-class SystemctlListUnitsLine(NamedTuple):
+class MountTuple(NamedTuple):
     """
     Args:
         unit: The unit name.
@@ -88,6 +88,14 @@ class SystemctlListUnitsLine(NamedTuple):
         sub: The low-level unit activation state, values depend on unit type.
         description: Unit description.
     """
+    mount_type: MountType
+    unit: str
+    load: str
+    active: str
+    sub: str
+    description: str
+
+class MountDict(TypedDict):
     unit: str
     load: str
     active: str
@@ -95,30 +103,47 @@ class SystemctlListUnitsLine(NamedTuple):
     description: str
 
 
-def detect_exising_mounts() -> list[SystemctlListUnitsLine]:
-    """Runs `systemctl list-units --type=mount --all --no-legend` and returns a list
-    of SystemctlListUnitsLine objects."""
+def detect_all_systemd_mounts() -> list[MountTuple]:
+    
+    # systemctl list-units --type=mount --no-legend --all 
+    # systemctl list-units --type=automount --no-legend --all
 
-    # First hit systemctl, get giant string returned
-    result = logic.core.run_command(["systemctl", "list-units", "--type=mount", "--all", "--no-legend"])
+    # First hit systemctl, get json returned
+    result_mounts = logic.core.run_command(
+        ["systemctl", "list-units", "--type=mount", "--all", "--output=json"]
+    )
+    result_automounts = logic.core.run_command(
+        ["systemctl", "list-units", "--type=automount", "--all", "--output=json"]
+    )
 
-    # Now normalize the data by converting each line to a SystemctlListUnitsLine obj
-    mounts_list_normalized: list[SystemctlListUnitsLine] = []
-    for line in result.stdout.splitlines():
-        lines_split = line.split()
-        if lines_split[0] == "●":
-            continue
-        mounts_list_normalized.append(
-            SystemctlListUnitsLine(
-                unit=lines_split[0],
-                load=lines_split[1],
-                active=lines_split[2],
-                sub=lines_split[3],
-                description=lines_split[4],
-            )
+    result_mounts_json: list[MountDict] = json.loads(result_mounts.stdout)
+    result_automounts_json: list[MountDict] = json.loads(result_automounts.stdout)
+    
+    result_mounts_tuples = [
+        MountTuple(
+            mount_type=MountType.MOUNT_AT_BOOT,
+            unit=entry["unit"],
+            load=entry["load"],
+            active=entry["active"],
+            sub=entry["sub"],
+            description=entry["description"],
         )
-
-    return mounts_list_normalized
+        for entry in result_mounts_json
+        if not entry["load"].startswith("not-found")
+    ]
+    result_automounts_tuples = [
+        MountTuple(
+            mount_type=MountType.AUTOMOUNT,
+            unit=entry["unit"],
+            load=entry["load"],
+            active=entry["active"],
+            sub=entry["sub"],
+            description=entry["description"],
+        )
+        for entry in result_automounts_json
+        if not entry["load"].startswith("not-found")
+    ]
+    return result_mounts_tuples + result_automounts_tuples
 
 
 @dataclass
@@ -145,15 +170,15 @@ class ManagedMountInstallSection:
     wantedby: str    
     
 @dataclass
-class ManagedMountsData:
+class ManagedMountData:
     unit: ManagedMountUnitSection
     install: ManagedMountInstallSection
     mount: ManagedMountMountSection | ManagedMountAutomountSection
     
         
-        
 def list_managed_mounts() -> list[Path]:
-    """Scans the managed mounts directory and returns a list of .mount and .automount files"""
+    """Scans the managed mounts directory and returns a list of Path objects
+    representing .mount and .automount files"""
     
     dir_path = Path(logic.config.config["DEFAULT"]["managed_mounts_dir"])
     mount_files = list(dir_path.glob("*.mount"))
@@ -161,29 +186,49 @@ def list_managed_mounts() -> list[Path]:
     return mount_files + automount_files
        
 
-def list_managed_mounts_data() -> list[ManagedMountsData]:
+def list_managed_mounts_data() -> list[ManagedMountData]:
+    
+    # 1) Scan managed mounts directory for files
+
+    # 2) For each mount file, we need to know:
+    
+        # Do symlinks exist and point to the right place?
+            # os.path.islink("/etc/systemd/system/unit.automount")
+            # os.readlink("/etc/systemd/system/unit.automount") matches expected source
+
+        # Does systemd know about it?
+            # Parse systemctl list-unit-files --type=automount
+            # Look for your unit (should show linked or enabled)
+
+        # Is it enabled for boot?
+            # Check STATE column from list-unit-files (should be enabled for automounts)
+            # Or use systemctl is-enabled <unit>
+
+        # Is it currently loaded/active?
+            # Parse systemctl list-units --type=automount
+            # Check ACTIVE and SUB columns
+            # Or use systemctl is-active <unit>
+
+        # Are the symlink and systemd in sync?
+            # If symlink exists but unit not in list-unit-files → need systemctl daemon-reload
+            # If unit shows linked but should be enabled → need systemctl enable
+    
+    
     
     mounts = list_managed_mounts()
     mountparser = configparser.ConfigParser()
     successful_reads = 0
     successful_normalized = 0
-    mounts_data: list[ManagedMountsData] = []
+    mounts_data: list[ManagedMountData] = []
     for mount in mounts:
-        mountparser.clear()
         
+        mountparser.clear()
         try:
             mountparser.read(mount)
         except configparser.Error as e:
             log.error(f"Error reading {mount}: {e}")
             continue
         successful_reads += 1
-        log(rich.rule.Rule(title=mount.name))
-        
-        for section in mountparser.sections():
-            log(f"Section: {section}")
-            items = mountparser.items(section)
-            for item in items:
-                log(f"    {item}")
                 
         if "Automount" in mountparser.sections():
             mount_section = ManagedMountAutomountSection(
@@ -200,7 +245,7 @@ def list_managed_mounts_data() -> list[ManagedMountsData]:
             )
             
         mounts_data.append(
-            ManagedMountsData(
+            ManagedMountData(
                 unit=ManagedMountUnitSection(
                     description=mountparser.get("Unit", "Description"),
                     requires=mountparser.get("Unit", "Requires", fallback=None),
@@ -219,69 +264,69 @@ def list_managed_mounts_data() -> list[ManagedMountsData]:
     
 
 
-@dataclass
-class MountPayload:
-    mount_type: MountType
-    mount_path: Path  # example: "/mnt/truenas-tailnet/brents-data"
-    description: str
-    requires: str
-    after: str
-    what: str
-    where: str
-    protocol: MountProtocol
-    options: str
-    timeout: int
-    wanted_by: str
+# @dataclass
+# class MountPayload:
+#     mount_type: MountType
+#     mount_path: Path  # example: "/mnt/truenas-tailnet/brents-data"
+#     description: str
+#     requires: str
+#     after: str
+#     what: str
+#     where: str
+#     protocol: MountProtocol
+#     options: str
+#     timeout: int
+#     wanted_by: str
 
 
-def create_mount_file(mount_payload: MountPayload) -> str:
-    """
-    Returns:
-        str: Mount file name produced by systemd-escape if the file is created successfully
-    Raises:
-        Exception: if error while creating the file
-    """
+# def create_mount_file(mount_payload: MountPayload) -> str:
+#     """
+#     Returns:
+#         str: Mount file name produced by systemd-escape if the file is created successfully
+#     Raises:
+#         Exception: if error while creating the file
+#     """
 
-    mount_string = dedent(
-        f"""\
-        [Unit]
-        Description={mount_payload.description}
-        Requires={mount_payload.requires}
-        After={mount_payload.after}
+#     mount_string = dedent(
+#         f"""\
+#         [Unit]
+#         Description={mount_payload.description}
+#         Requires={mount_payload.requires}
+#         After={mount_payload.after}
 
-        [Mount]
-        What={mount_payload.what}
-        Where={mount_payload.where}
-        Type={mount_payload.protocol}
-        Options={mount_payload.options}
-        TimeoutSec={mount_payload.timeout}
+#         [Mount]
+#         What={mount_payload.what}
+#         Where={mount_payload.where}
+#         Type={mount_payload.protocol}
+#         Options={mount_payload.options}
+#         TimeoutSec={mount_payload.timeout}
 
-        [Install]
-        WantedBy={mount_payload.wanted_by}
-    """
-    )
+#         [Install]
+#         WantedBy={mount_payload.wanted_by}
+#     """
+#     )
 
-    # Here need to call systemd-escape to get the correct file name
-    result = logic.core.run_command(
-        [
-            "systemd-escape",
-            "-p",
-            f"--suffix={mount_payload.mount_type.value}",
-            str(mount_payload.mount_path),
-        ]
-    )
-    mountfile_name = result.stdout.strip()
-    output_path = DEFAULT_MOUNTFILES_DIR / mountfile_name
+#     # Here need to call systemd-escape to get the correct file name
+#     result = logic.core.run_command(
+#         [
+#             "systemd-escape",
+#             "-p",
+#             f"--suffix={mount_payload.mount_type.value}",
+#             str(mount_payload.mount_path),
+#         ]
+#     )
+#     mountfile_name = result.stdout.strip()
+#     output_path = DEFAULT_MOUNTFILES_DIR / mountfile_name
 
-    try:
-        # Ensure parent directory exists
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        # Overwrite existing file if it exists
-        output_path.write_text(mount_string)
-    except OSError as e:
-        raise RuntimeError(f"Failed to create mount file {output_path}: {e}") from e
+#     try:
+#         # Ensure parent directory exists
+#         output_path.parent.mkdir(parents=True, exist_ok=True)
+#         # Overwrite existing file if it exists
+#         output_path.write_text(mount_string)
+#     except OSError as e:
+#         raise RuntimeError(f"Failed to create mount file {output_path}: {e}") from e
 
-    return mountfile_name
+#     return mountfile_name
 
 
 def mount_at_boot(mount_unit: str, automount_unit: str) -> None:

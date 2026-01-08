@@ -1,6 +1,7 @@
 # This removes the focus highlight from text on buttons
 Button {
     background: $boost;
+    min-width: 8;
     &:focus {
         text-style: none;
         background: $primary-darken-2;
@@ -27,7 +28,7 @@ Button {
 .margin-1-0 { margin: 1 0; }
 .margin-0-1 { margin: 0 1; }
 .border-1 { border: outer $panel; }
-
+.horizontal-scroll { overflow-x: auto; }
 
 .compact-static {
     width: auto;
@@ -84,7 +85,13 @@ TabbedContent {
     min-height: 10;
 }
 
-ManagedMount {
+#managed-mounts-container {
+    width: auto;
+    height: auto;
+    # border: solid red;
+}
+
+ManagedMountWidget {
     height: 3;
     margin: 1 0;
     background: $surface-lighten-1;
@@ -93,7 +100,7 @@ ManagedMount {
 }
 
 .mount-data-box {
-    width: 1fr;
+    width: auto;
     padding: 0 1;
     # background: blue;
 }
