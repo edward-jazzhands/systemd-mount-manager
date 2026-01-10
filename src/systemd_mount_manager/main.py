@@ -12,7 +12,7 @@ except ImportError:
     sys.exit(1)
 
 
-def debug_msg(msg: str, debug: bool = False) -> None:
+def debug_msg(msg: str, debug: bool) -> None:
     if debug:
         click.echo(msg, err=True)
 
@@ -88,7 +88,7 @@ def initialize_app() -> None:
 # you can use Click's context object with @click.pass_context.
 
 
-@click.group()
+@click.command()
 # @click.argument("path", type=str, default=None, required=False)  here for reference
 @click.option("--gui", is_flag=True, default=False, help="Run the GUI version of the application.")
 @click.option("--tui", is_flag=True, default=False, help="Run the TUI version of the application.")
@@ -102,13 +102,17 @@ def initialize_app() -> None:
 def cli(gui: bool, tui: bool, stdio: bool, debug: bool) -> None:
 
     # Very first thing we do: check for systemd
+    systemd_running = False
     try:
         subprocess.run(["systemctl", "--version"], capture_output=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         # These are set to true so they will always show in stderr regardless of debug mode:
         debug_msg("ERROR: systemd is not detected on this system.", True)
         debug_msg("systemd-mount-manager requires systemd to function.", True)
-        sys.exit(1)
+        if not debug:
+            sys.exit(1)
+    else:
+        systemd_running = True
 
     # Check if systemd is the active init system
     if not os.path.isdir("/run/systemd/system"):
@@ -118,10 +122,15 @@ def cli(gui: bool, tui: bool, stdio: bool, debug: bool) -> None:
             True,
         )
         debug_msg("systemd-mount-manager requires systemd to be PID 1 to " "manage mounts.", True)
-        sys.exit(1)
+        if not debug:
+            sys.exit(1)
+    else:
+        systemd_running = True
 
-    debug_msg("✓ systemd is active and running", debug)
-
+    if systemd_running:
+        debug_msg("✓ systemd is active and running", debug)
+    else:
+        debug_msg("systemd is NOT running, app will not work. Continuing anyway because debug", debug)
     # Once we've established that systemd is active and running, we can proceed
     # with program initialization.
     initialize_app()
@@ -183,16 +192,16 @@ def cli(gui: bool, tui: bool, stdio: bool, debug: bool) -> None:
             tui_mode(debug, fallback)
 
 
-@cli.command()
-@click.option("--flag3", is_flag=True, help="Nested command flag 3")
-@click.option("--flag4", is_flag=True, help="Nested command flag 4")
-def nested_command(flag3: bool, flag4: bool) -> None:
-    """A nested command with its own flags."""
+# @cli.command()
+# @click.option("--flag3", is_flag=True, help="Nested command flag 3")
+# @click.option("--flag4", is_flag=True, help="Nested command flag 4")
+# def nested_command(flag3: bool, flag4: bool) -> None:
+#     """A nested command with its own flags."""
 
-    if flag3:
-        click.echo("Flag3 is set")
-    if flag4:
-        click.echo("Flag4 is set")
+#     if flag3:
+#         click.echo("Flag3 is set")
+#     if flag4:
+#         click.echo("Flag4 is set")
 
 
 def main():

@@ -167,6 +167,8 @@ class DiscoveredMounts(Container):
 
     def compose(self) -> ComposeResult:
         self.table_mode = DiscoveredMounts.TableMode.NONSYSTEM
+        self.mounts_list: list[logic.mounts.MountTuple] = []
+        self.managed_list: list[str] = []
         
         self.table = DataTable[str](id="discovered-mounts-table")
         self.table.add_column("Mount Type", key="mount_type")
@@ -181,6 +183,7 @@ class DiscoveredMounts(Container):
         with ContentSwitcher(initial="discovered-mounts-table"):
             yield self.table
             yield Static("No additional user mounts discovered", id="no-mounts-found", classes="no-mounts-found")
+            yield Static("(DEBUG MODE) \nSystemD not found", id="sysd-not-found", classes="no-mounts-found")
 
     async def on_mount(self):
         await self.refresh_data().wait()
@@ -188,8 +191,12 @@ class DiscoveredMounts(Container):
     @on(Button.Pressed, "#refresh-button")        
     @work(exit_on_error=False)
     async def refresh_data(self) -> None:
-        self.mounts_list = logic.mounts.detect_all_systemd_mounts()
-        self.managed_list = [mount.name for mount in logic.mounts.list_managed_mounts()]
+        try:
+            self.mounts_list = logic.mounts.detect_all_systemd_mounts()
+            self.managed_list = [mount.name for mount in logic.mounts.list_managed_mounts()]
+        except OSError:
+            self.sysd_not_found()
+            return
         match self.table_mode:
             case DiscoveredMounts.TableMode.NONSYSTEM:
                 self.show_nonsystem_mounts()
@@ -198,6 +205,13 @@ class DiscoveredMounts(Container):
             case DiscoveredMounts.TableMode.ALL:
                 self.show_all_mounts()
     
+    def sysd_not_found(self) -> None:
+        self.query_one(ContentSwitcher).current = "sysd-not-found"
+        self.query_one("#non-system-mounts-button").disabled = True
+        self.query_one("#system-mounts-button").disabled = True
+        self.query_one("#all-mounts-button").disabled = True
+        self.query_one("#refresh-button").disabled = True
+
     @on(Button.Pressed, "#non-system-mounts-button")
     def show_nonsystem_mounts(self) -> None:
         self.log("Showing non-system mounts")

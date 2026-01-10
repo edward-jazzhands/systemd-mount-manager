@@ -109,12 +109,15 @@ def detect_all_systemd_mounts() -> list[MountTuple]:
     # systemctl list-units --type=automount --no-legend --all
 
     # First hit systemctl, get json returned
-    result_mounts = logic.core.run_command(
-        ["systemctl", "list-units", "--type=mount", "--all", "--output=json"]
-    )
-    result_automounts = logic.core.run_command(
-        ["systemctl", "list-units", "--type=automount", "--all", "--output=json"]
-    )
+    try:
+        result_mounts = logic.core.run_command(
+            ["systemctl", "list-units", "--type=mount", "--all", "--output=json"]
+        )
+        result_automounts = logic.core.run_command(
+            ["systemctl", "list-units", "--type=automount", "--all", "--output=json"]
+        )
+    except OSError as e:
+        raise OSError("systemctl command failed") from e
 
     result_mounts_json: list[MountDict] = json.loads(result_mounts.stdout)
     result_automounts_json: list[MountDict] = json.loads(result_automounts.stdout)
