@@ -51,13 +51,11 @@ class CustomHeader(Container):
             yield Static(header_ascii.strip(), id="ascii_banner")
             with Container(id="header_info"):
                 yield Static(f"Dev Mode: {self.app_data.dev_mode}")
-                yield Static(f"Fallback: {self.app_data.fallback}")
 
 
 @dataclass
 class AppData:
     dev_mode: bool
-    fallback: bool
 
 
 class TextualApp(App[None]):
@@ -71,12 +69,12 @@ class TextualApp(App[None]):
     CSS_PATH = "styles.tcss"
     TITLE = "Systemd Mount Manager"
 
-    def __init__(self, debug: bool, fallback: bool) -> None:
+    def __init__(self, dev: bool) -> None:
         super().__init__()
-        self.app_data = AppData(dev_mode=debug, fallback=fallback)
+        self.app_data = AppData(dev_mode=dev)
         # self.app_data.display = False
         self.config_overwritten = False
-        if debug:
+        if dev:
             config_write_result = logic.config.write_default_config(force=True)
             # result will be False if config file already existed (overwrite)
             self.config_overwritten = config_write_result is False
@@ -120,12 +118,12 @@ class TextualApp(App[None]):
         self.log(self.tree)
 
 
-def tui_run(debug: bool, fallback: bool) -> None:
-    app = TextualApp(debug=debug, fallback=fallback)
+def tui_run(dev: bool) -> None:
+    app = TextualApp(dev=dev)
     app.run()
     sys.exit(app.return_code)
 
 
 if __name__ == "__main__":
     # Warning: Running this module will overwrite your config file
-    tui_run(debug=True, fallback=False)
+    tui_run(dev=True)

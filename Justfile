@@ -61,7 +61,7 @@ clean:
 
 # Remove the virtual environment and lock file
 del-env:
-  rm -rf .venv
+  rm -rf .venv*
   rm -rf uv.lock
 
 nuke: clean del-env

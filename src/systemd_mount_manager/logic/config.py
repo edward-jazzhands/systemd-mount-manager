@@ -46,6 +46,7 @@ _log_writer = TextualLogWriter()
 @dataclass
 class SettingsPayload:
     managed_mounts_dir: str
+    hide_startup_gui_warning: bool
 
 
 config = configparser.ConfigParser()
@@ -89,6 +90,7 @@ def write_default_config(force: bool = False) -> bool:
     # Here create the default config
     config["DEFAULT"] = {
         "managed_mounts_dir": DEFAULT_MOUNTFILES_DIR.as_posix(),
+        "hide_startup_gui_warning": "False"
     }
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
@@ -103,7 +105,10 @@ def load_settings() -> SettingsPayload:
     """Load settings from config file. Returns a SettingsPayload object.
     Import the SettingsPayload dataclass for type checking."""
 
-    return SettingsPayload(managed_mounts_dir=config["DEFAULT"]["managed_mounts_dir"])
+    return SettingsPayload(
+        managed_mounts_dir=config["DEFAULT"]["managed_mounts_dir"], 
+        hide_startup_gui_warning=config["DEFAULT"]["hide_startup_gui_warning"]
+    )
 
 
 def change_managed_mounts_dir(new_dir: str, migrate: bool = False):
@@ -176,3 +181,9 @@ def change_managed_mounts_dir(new_dir: str, migrate: bool = False):
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
 
+def change_hide_startup_gui_warning(new_value: bool):
+
+    # config["DEFAULT"]["hide_startup_gui_warning"] = new_value
+    config.set
+    with open(CONFIG_PATH, "w") as configfile:
+        config.write(configfile)
