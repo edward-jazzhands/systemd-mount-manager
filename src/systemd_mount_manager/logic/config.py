@@ -3,12 +3,14 @@ Import the `config` object from this module to read configs from configparser ob
 
 # python standard lib
 from __future__ import annotations
+
 # import sys
 # from typing import Sequence
 # import subprocess
 # import json
 from pathlib import Path
 from dataclasses import dataclass
+
 # from enum import StrEnum
 # from textwrap import dedent
 import errno
@@ -17,7 +19,8 @@ import configparser
 # Third party
 # import rich.rule
 from textual import log
-# import rich 
+
+# import rich
 
 
 SYSTEMD_PATH: Path = Path("/etc/systemd/system/")
@@ -40,6 +43,8 @@ class TextualLogWriter:
 
     def write(self, message: str) -> None:
         self.buffer.append(message)
+
+
 _log_writer = TextualLogWriter()
 
 
@@ -90,7 +95,7 @@ def write_default_config(force: bool = False) -> bool:
     # Here create the default config
     config["DEFAULT"] = {
         "managed_mounts_dir": DEFAULT_MOUNTFILES_DIR.as_posix(),
-        "hide_startup_gui_warning": "False"
+        "hide_startup_gui_warning": "False",
     }
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
@@ -106,8 +111,8 @@ def load_settings() -> SettingsPayload:
     Import the SettingsPayload dataclass for type checking."""
 
     return SettingsPayload(
-        managed_mounts_dir=config["DEFAULT"]["managed_mounts_dir"], 
-        hide_startup_gui_warning=config["DEFAULT"]["hide_startup_gui_warning"]
+        managed_mounts_dir=config["DEFAULT"]["managed_mounts_dir"],
+        hide_startup_gui_warning=config["DEFAULT"]["hide_startup_gui_warning"],
     )
 
 
@@ -180,6 +185,7 @@ def change_managed_mounts_dir(new_dir: str, migrate: bool = False):
     config["DEFAULT"]["managed_mounts_dir"] = new_dir
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
+
 
 def change_hide_startup_gui_warning(new_value: bool):
 

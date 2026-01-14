@@ -15,8 +15,9 @@ from textual import on, work  # , log
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.widgets import TabPane, Button, ContentSwitcher
+
 # from textual.binding import Binding
-from textual.widgets import Static, DataTable #, Switch  # , Button, Select
+from textual.widgets import Static, DataTable  # , Switch  # , Button, Select
 from rich.text import Text
 
 
@@ -36,34 +37,33 @@ class ShareType(Enum):
 
 
 class ManagedMountWidget(Horizontal):
-    
+
     # UnitSection:
     #     description: str
     #     requires: str | None
     #     after: str | None
-        
+
     # MountSection:
     #     what: str
     #     where: str
     #     type: str
     #     options: str
     #     timeoutsec: str
-        
+
     # AutomountSection:
     #     where: str
     #     timeoutidlesec: str
 
     # InstallSection:
-    #     wantedby: str    
-    
-    
+    #     wantedby: str
+
     def __init__(self, mount_data: logic.mounts.ManagedMountData) -> None:
         super().__init__()
         self.type: logic.mounts.MountType
         self.mount_data = mount_data
         if isinstance(mount_data.mount, logic.mounts.ManagedMountMountSection):
             self.type = logic.mounts.MountType.MOUNT_AT_BOOT
-        else:   # must be MountType.MOUNT_LAZILY
+        else:  # must be MountType.MOUNT_LAZILY
             self.type = logic.mounts.MountType.AUTOMOUNT
 
     def compose(self) -> ComposeResult:
@@ -74,7 +74,7 @@ class ManagedMountWidget(Horizontal):
 
 
 class ManagedMountHeader(Container):
-    
+
     def compose(self) -> ComposeResult:
         with Horizontal():
             yield Static("Managed Mounts", classes="w1fr margin-0-1")
@@ -103,7 +103,7 @@ class ManagedMountHeader(Container):
 
 
 class ManagedMounts(Container):
-        
+
     # Ways to get mounts into program:
     # 1) Use add mount wizard page
     # 2) Copy and paste the files into managed mounts dir
@@ -119,7 +119,7 @@ class ManagedMounts(Container):
 
     async def on_mount(self):
         self.log("Mounted ManagedMounts")
-        
+
         worker = self.load_managed_mounts()
         self.mounts_list = await worker.wait()
         if not self.mounts_list:
@@ -130,7 +130,7 @@ class ManagedMounts(Container):
         """Loads the mounts from the managed mounts directory then updates the UI.
         Returns a list of ManagedMountData objects. This list is not connected to
         whether the UI was updated successfully."""
-        
+
         self.log("Loading managed mounts")
         mounts_container = self.query_one("#managed-mounts-container", Container)
         managed_mounts = logic.mounts.list_managed_mounts_data()
@@ -140,7 +140,7 @@ class ManagedMounts(Container):
             # the TEXTUAL UI (mounting widgets in containers). It is completely unrelated to systemd.
             # The word `mount` just has special meaning in Textual. The dual meaning of the word
             # may appear confusing here. It's mounting a ManagedMountWidget in the Textual UI,
-            # which is only a visual representation of its corresponding mount file. 
+            # which is only a visual representation of its corresponding mount file.
             # This is not actually 'mounting' (aka installing/enabling) the mount units in systemd.
         return managed_mounts
 
@@ -154,8 +154,6 @@ class DiscoveredMountHeader(Horizontal):
         yield Button("System Mounts", id="system-mounts-button", compact=True)
         yield Button("All Mounts", id="all-mounts-button", compact=True)
         yield Button("Refresh", id="refresh-button", compact=True)
-        
-
 
 
 class DiscoveredMounts(Container):
@@ -169,7 +167,7 @@ class DiscoveredMounts(Container):
         self.table_mode = DiscoveredMounts.TableMode.NONSYSTEM
         self.mounts_list: list[logic.mounts.MountTuple] = []
         self.managed_list: list[str] = []
-        
+
         self.table = DataTable[str](id="discovered-mounts-table")
         self.table.add_column("Mount Type", key="mount_type")
         self.table.add_column("Unit", key="unit")
@@ -182,13 +180,19 @@ class DiscoveredMounts(Container):
         yield DiscoveredMountHeader(classes="h2")
         with ContentSwitcher(initial="discovered-mounts-table"):
             yield self.table
-            yield Static("No additional user mounts discovered", id="no-mounts-found", classes="no-mounts-found")
-            yield Static("(DEBUG MODE) \nSystemD not found", id="sysd-not-found", classes="no-mounts-found")
+            yield Static(
+                "No additional user mounts discovered",
+                id="no-mounts-found",
+                classes="no-mounts-found",
+            )
+            yield Static(
+                "(DEBUG MODE) \nSystemD not found", id="sysd-not-found", classes="no-mounts-found"
+            )
 
     async def on_mount(self):
         await self.refresh_data().wait()
 
-    @on(Button.Pressed, "#refresh-button")        
+    @on(Button.Pressed, "#refresh-button")
     @work(exit_on_error=False)
     async def refresh_data(self) -> None:
         try:
@@ -204,7 +208,7 @@ class DiscoveredMounts(Container):
                 self.show_system_mounts()
             case DiscoveredMounts.TableMode.ALL:
                 self.show_all_mounts()
-    
+
     def sysd_not_found(self) -> None:
         self.query_one(ContentSwitcher).current = "sysd-not-found"
         self.query_one("#non-system-mounts-button").disabled = True
@@ -221,11 +225,7 @@ class DiscoveredMounts(Container):
             for mount in self.mounts_list
             if not mount.unit.startswith(("sys-", "dev-", "proc-", "run-", "-."))
         ]
-        unmanaged_filter = [
-            mount
-            for mount in first_filter
-            if mount.unit not in self.managed_list
-        ]
+        unmanaged_filter = [mount for mount in first_filter if mount.unit not in self.managed_list]
         if not unmanaged_filter:
             self.query_one(ContentSwitcher).current = "no-mounts-found"
             return
@@ -233,7 +233,7 @@ class DiscoveredMounts(Container):
             self.query_one(ContentSwitcher).current = "discovered-mounts-table"
             self.table.clear()
             self.table.add_rows(unmanaged_filter)
-            
+
     @on(Button.Pressed, "#system-mounts-button")
     def show_system_mounts(self) -> None:
         self.log("Showing system mounts")
@@ -247,7 +247,7 @@ class DiscoveredMounts(Container):
                 if mount.unit.startswith(("sys-", "dev-", "proc-", "run-", "-."))
             ]
         )
-        
+
     @on(Button.Pressed, "#all-mounts-button")
     def show_all_mounts(self) -> None:
         self.log("Showing all mounts")

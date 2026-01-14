@@ -1,9 +1,10 @@
 # python standard lib
 from __future__ import annotations
 import sys
-from typing import Sequence #, NamedTuple
+from typing import Sequence  # , NamedTuple
 import subprocess
 import json
+
 # from pathlib import Path
 # from dataclasses import dataclass
 # from enum import StrEnum
@@ -74,11 +75,8 @@ def check_sudo_cached() -> bool:
 
 
 def run_command(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return result
-    except Exception as e:
-        raise e
+
+    return subprocess.run(cmd, capture_output=True, text=True, check=True)
 
 
 def run_command_with_sudo(command: str) -> subprocess.CompletedProcess[str]:

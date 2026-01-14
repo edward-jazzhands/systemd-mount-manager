@@ -2,20 +2,19 @@
 Contains the TUI interface for Systemd Mount Manager.
 """
 
-# ~ Type Checking (Pyright and MyPy) - Strict Mode
-# ~ Linting - Ruff
-# ~ Formatting - Black - max 100 characters / line
-
 # Python imports
 from __future__ import annotations
-# from typing import Any  # , cast
+
+from typing import Sequence  # , cast
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 # Textual imports
 from textual import on  # , log
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
+
 # from textual.widget import Widget
 from textual.widgets import TabbedContent
 from textual.binding import Binding
@@ -42,20 +41,20 @@ header_ascii = r"""
 
 class CustomHeader(Container):
 
-    def __init__(self, app_data: AppData):
+    def __init__(self):
         super().__init__()
-        self.app_data = app_data
+        # self.app_data = app_data
 
     def compose(self) -> ComposeResult:
         with Horizontal():
             yield Static(header_ascii.strip(), id="ascii_banner")
             with Container(id="header_info"):
-                yield Static(f"Dev Mode: {self.app_data.dev_mode}")
+                yield Static(f"Dev Mode: {False}")
 
 
-@dataclass
-class AppData:
-    dev_mode: bool
+# @dataclass
+# class AppData:
+#     dev_mode: bool
 
 
 class TextualApp(App[None]):
@@ -69,22 +68,17 @@ class TextualApp(App[None]):
     CSS_PATH = "styles.tcss"
     TITLE = "Systemd Mount Manager"
 
-    def __init__(self, dev: bool) -> None:
-        super().__init__()
-        self.app_data = AppData(dev_mode=dev)
-        # self.app_data.display = False
-        self.config_overwritten = False
-        if dev:
-            config_write_result = logic.config.write_default_config(force=True)
-            # result will be False if config file already existed (overwrite)
-            self.config_overwritten = config_write_result is False
+    # def __init__(self) -> None:
+    #     super().__init__()
+    # self.app_data = AppData(dev_mode=dev)
+    # self.app_data.display = False
 
     def compose(self) -> ComposeResult:
 
         # yield self.app_data
 
         with Container(id="main_container"):
-            yield CustomHeader(app_data=self.app_data)
+            yield CustomHeader()
             with TabbedContent(id="main_tabs"):
                 yield DashBoard("Dashboard")
                 yield FstabTab("fstab")
@@ -97,10 +91,6 @@ class TextualApp(App[None]):
     def on_mount(self) -> None:
 
         self.content_switcher = self.query_one(ContentSwitcher)  # optimize querying
-        if self.config_overwritten:
-            self.log("Config file was overwritten with default values")
-        else:
-            self.log("New config file was generated")
 
     @on(TabbedContent.TabActivated)
     def tab_activated(self, event: TabbedContent.TabActivated) -> None:
@@ -118,12 +108,24 @@ class TextualApp(App[None]):
         self.log(self.tree)
 
 
-def tui_run(dev: bool) -> None:
-    app = TextualApp(dev=dev)
-    app.run()
-    sys.exit(app.return_code)
+def tui_run(dev: bool = False) -> None:
+    
+    if not dev:    
+        app = TextualApp()
+        app.run()
+        sys.exit(app.return_code)
+    else:
+        import os
+        script_path = Path(__file__).resolve()
+        full_command = ["uv", "run", "textual", "run", "--dev", str(script_path)]
+        try:
+            os.execvp("uv", full_command)
+        except:
+            print("ERROR: UV command failed to execute.")
 
-
+        
 if __name__ == "__main__":
-    # Warning: Running this module will overwrite your config file
-    tui_run(dev=True)
+    # When Textual dev-tools runs this file, it'll run tui_run() again with
+    # dev bool set to False - but this block of code is already being run
+    # by the Textual dev-tools. It will launch the Textual app in dev mode.
+    tui_run()

@@ -224,7 +224,9 @@ class SettingsTab(TabPane):
                 # )
                 with Horizontal(classes="h2"):
                     yield Container()
-                    yield Static("Choose a directory to store managed mounts", classes="compact-static")
+                    yield Static(
+                        "Choose a directory to store managed mounts", classes="compact-static"
+                    )
                     yield Button("Choose", id="fspicker-button", compact=True)
                 yield SettingOption(
                     widget_id="smb-share",

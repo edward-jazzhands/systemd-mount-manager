@@ -13,6 +13,7 @@ except ImportError:
     print("Warning: click not found. Did you use --system-site-packages?", file=sys.stderr)
     sys.exit(1)
 
+
 # ANSI color codes
 class Color:
     RED = "\033[0;31m"
@@ -60,30 +61,58 @@ def is_graphical_session(dev: bool) -> bool:
     return False
 
 
-def check_systemd(dev: bool = False) -> bool:
+def check_systemd(dev: bool) -> bool:
 
-    # check #1: systemctl
-    try:
-        subprocess.run(["systemctl", "--version"], capture_output=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        click.echo("ERROR: systemd is not detected on this system.")
-        click.echo("systemd-mount-manager requires systemd to function.")
-    else:
-        return True
+    systemd_is_active = False
+    systemd_state = ""
 
-    # If above check failed, then we can do some diagnosis to see why
-    if not os.path.isdir("/run/systemd/system"):
-        click.echo("ERROR: systemd is installed but NOT running as the init system.")
-        click.echo("This usually means your system is using a different init system (like OpenRC).")
-        click.echo("systemd-mount-manager requires systemd to be PID 1 to manage mounts.")
+    # Check PID 1
+    ps_result = subprocess.run(["ps", "-p", "1", "-o", "comm="], capture_output=True, text=True)
+    pid1_is_systemd = ps_result.stdout.strip() == "systemd"
     
-    return False
+    # Check systemctl
+    try:
+        systemctl_result = subprocess.run(
+            ["systemctl", "is-system-running"], capture_output=True, text=True
+        )
+    except:
+        pass
+    else:
+        systemd_state = systemctl_result.stdout.strip()
+        systemd_is_active = systemd_state in [
+            "running",
+            "degraded",
+            "starting",
+            "stopping",
+            "initializing",
+            "maintenance",
+        ]
+
+    if pid1_is_systemd and systemd_is_active:
+        debug_msg("systemd is the init system and running", dev)
+        return True
+    elif pid1_is_systemd:
+        click.echo(
+            f"WARNING: systemd is PID 1 but state is: {systemd_state}. "
+            "Program may not function correctly."
+        )
+        return True
+    else:
+        click.echo(
+            f"ERROR: PID 1 is not systemd. Found: {ps_result.stdout.strip()}"
+            "\nSystemd Mount Manager requires systemd to be the active OS init system."
+        )
+        return False
 
 
 def tui_mode(dev: bool):
 
     from systemd_mount_manager.tui import tui_run
-    tui_run(dev=dev)
+
+    if dev:
+        click.pause("DEV MODE: Press any key to continue")
+    tui_run(dev)
+
 
 # @click.group() creates a command group that can contain subcommands
 # @cli.command() registers a subcommand under this group
@@ -93,29 +122,42 @@ def tui_mode(dev: bool):
 # If you need to pass context from the parent command to child commands,
 # you can use Click's context object with @click.pass_context.
 
+
 @click.group()
 @click.option(
-    "--dev", is_flag=True, default=False,
-    help="Development mode - [Warning]: resets config to default"
+    "--dev",
+    is_flag=True,
+    default=False,
+    help="Development mode - [Warning]: resets config to default",
 )
 @click.pass_context
 def cli(ctx: click.Context, dev: bool) -> None:
     """SystemD Mount Manager - The easiest way to manage network mounts on Linux.
     
-    There's 3 ways to use the program. GUI mode, TUI mode, and the CLI."""
+    There's 3 ways to use the program: GUI mode, TUI mode, and the CLI.
+    Note that systemd is required in order for the program to start."""
 
-    debug_msg("DEV MODE is ON", dev)
     ctx.obj: bool = dev
+    debug_msg("DEV MODE is ON", dev)
+
+    sysd_check = check_systemd(dev)
+    if sysd_check is False:
+        if dev is False:
+            raise click.Abort("systemd not detected.")
+        else:
+            click.echo("systemd not detected, but running anyway because dev mode is active.")
+    
     # Initialization
     try:
         configwrite_result = logic.config.write_default_config(force=dev)
     except FileExistsError:
         pass
     else:
-        if configwrite_result is True:   # means file was created
+        if configwrite_result is True:  # means file was created
             debug_msg("New config file was created", dev)
-        else:   # file was force overwritten
+        else:  # file was force overwritten
             debug_msg("Config was overwritten with default values", dev)
+
 
 @cli.command()
 @click.pass_context
@@ -125,17 +167,21 @@ def gui(ctx: click.Context) -> None:
     gui_available = is_graphical_session(ctx.obj)
     if gui_available:
         from systemd_mount_manager.gui import gui_run
+
+        if ctx.obj:
+            click.pause("DEV MODE: Press any key to continue")
         gui_run(ctx.obj)
     else:
         click.echo(
             "Attention: You selected GUI mode, but SystemD Mount Manager could not detect "
             "a graphical desktop. The program will fall back to TUI mode."
         )
-        if click.confirm('Continue? [default yes]', default=True, show_default=True):
+        if click.confirm("Continue? [default yes]", default=True, show_default=True):
             tui_mode(ctx.obj)
         else:
-            click.echo('Cancelled')
-            sys.exit(0)
+            click.echo("Cancelled")
+            return
+
 
 @cli.command()
 @click.pass_context
@@ -144,13 +190,14 @@ def tui(ctx: click.Context) -> None:
 
     tui_mode(ctx.obj)
 
+
 @cli.command()
 def stdio() -> None:
     """stdio mode - read commands from stdin, write responses to stdout.
-        This is intended for scripting or interfacing with the app from other programs."""
+    This is intended for scripting or interfacing with the app from other programs."""
 
     logic.core.run_stdio_mode()
-    sys.exit(0)
+    return
 
 
 def main():
@@ -159,5 +206,3 @@ def main():
 
 if __name__ == "__main__":
     cli()
-
-

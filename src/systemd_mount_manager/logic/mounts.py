@@ -1,12 +1,15 @@
 # python standard lib
 from __future__ import annotations
+
 # import sys
 from typing import NamedTuple, TypedDict, NotRequired
+
 # import subprocess
 import json
 from pathlib import Path
 from dataclasses import dataclass
 from enum import StrEnum
+
 # from textwrap import dedent
 # import errno
 import configparser
@@ -88,12 +91,14 @@ class MountTuple(NamedTuple):
         sub: The low-level unit activation state, values depend on unit type.
         description: Unit description.
     """
+
     mount_type: MountType
     unit: str
     load: str
     active: str
     sub: str
     description: str
+
 
 class MountDict(TypedDict):
     unit: str
@@ -104,8 +109,8 @@ class MountDict(TypedDict):
 
 
 def detect_all_systemd_mounts() -> list[MountTuple]:
-    
-    # systemctl list-units --type=mount --no-legend --all 
+
+    # systemctl list-units --type=mount --no-legend --all
     # systemctl list-units --type=automount --no-legend --all
 
     # First hit systemctl, get json returned
@@ -121,7 +126,7 @@ def detect_all_systemd_mounts() -> list[MountTuple]:
 
     result_mounts_json: list[MountDict] = json.loads(result_mounts.stdout)
     result_automounts_json: list[MountDict] = json.loads(result_automounts.stdout)
-    
+
     result_mounts_tuples = [
         MountTuple(
             mount_type=MountType.MOUNT_AT_BOOT,
@@ -154,7 +159,8 @@ class ManagedMountUnitSection:
     description: str
     requires: str | None
     after: str | None
-    
+
+
 @dataclass
 class ManagedMountMountSection:
     what: str
@@ -162,69 +168,70 @@ class ManagedMountMountSection:
     type: str
     options: str
     timeoutsec: str
-    
+
+
 @dataclass
 class ManagedMountAutomountSection:
     where: str
     timeoutidlesec: str
 
+
 @dataclass
 class ManagedMountInstallSection:
-    wantedby: str    
-    
+    wantedby: str
+
+
 @dataclass
 class ManagedMountData:
     unit: ManagedMountUnitSection
     install: ManagedMountInstallSection
     mount: ManagedMountMountSection | ManagedMountAutomountSection
-    
-        
+
+
 def list_managed_mounts() -> list[Path]:
     """Scans the managed mounts directory and returns a list of Path objects
     representing .mount and .automount files"""
-    
+
     dir_path = Path(logic.config.config["DEFAULT"]["managed_mounts_dir"])
     mount_files = list(dir_path.glob("*.mount"))
     automount_files = list(dir_path.glob("*.automount"))
     return mount_files + automount_files
-       
+
 
 def list_managed_mounts_data() -> list[ManagedMountData]:
-    
+
     # 1) Scan managed mounts directory for files
 
     # 2) For each mount file, we need to know:
-    
-        # Do symlinks exist and point to the right place?
-            # os.path.islink("/etc/systemd/system/unit.automount")
-            # os.readlink("/etc/systemd/system/unit.automount") matches expected source
 
-        # Does systemd know about it?
-            # Parse systemctl list-unit-files --type=automount
-            # Look for your unit (should show linked or enabled)
+    # Do symlinks exist and point to the right place?
+    # os.path.islink("/etc/systemd/system/unit.automount")
+    # os.readlink("/etc/systemd/system/unit.automount") matches expected source
 
-        # Is it enabled for boot?
-            # Check STATE column from list-unit-files (should be enabled for automounts)
-            # Or use systemctl is-enabled <unit>
+    # Does systemd know about it?
+    # Parse systemctl list-unit-files --type=automount
+    # Look for your unit (should show linked or enabled)
 
-        # Is it currently loaded/active?
-            # Parse systemctl list-units --type=automount
-            # Check ACTIVE and SUB columns
-            # Or use systemctl is-active <unit>
+    # Is it enabled for boot?
+    # Check STATE column from list-unit-files (should be enabled for automounts)
+    # Or use systemctl is-enabled <unit>
 
-        # Are the symlink and systemd in sync?
-            # If symlink exists but unit not in list-unit-files → need systemctl daemon-reload
-            # If unit shows linked but should be enabled → need systemctl enable
-    
-    
-    
+    # Is it currently loaded/active?
+    # Parse systemctl list-units --type=automount
+    # Check ACTIVE and SUB columns
+    # Or use systemctl is-active <unit>
+
+    # Are the symlink and systemd in sync?
+    # If symlink exists but unit not in list-unit-files → need systemctl daemon-reload
+    # If unit shows linked but should be enabled → need systemctl enable
+
     mounts = list_managed_mounts()
     mountparser = configparser.ConfigParser()
     successful_reads = 0
     successful_normalized = 0
     mounts_data: list[ManagedMountData] = []
     for mount in mounts:
-        
+
         mountparser.clear()
         try:
             mountparser.read(mount)
@@ -232,7 +239,7 @@ def list_managed_mounts_data() -> list[ManagedMountData]:
             log.error(f"Error reading {mount}: {e}")
             continue
         successful_reads += 1
-                
+
         if "Automount" in mountparser.sections():
             mount_section = ManagedMountAutomountSection(
                 where=mountparser.get("Automount", "Where"),
@@ -246,7 +253,7 @@ def list_managed_mounts_data() -> list[ManagedMountData]:
                 options=mountparser.get("Mount", "Options"),
                 timeoutsec=mountparser.get("Mount", "TimeoutSec"),
             )
-            
+
         mounts_data.append(
             ManagedMountData(
                 unit=ManagedMountUnitSection(
@@ -261,10 +268,9 @@ def list_managed_mounts_data() -> list[ManagedMountData]:
             )
         )
         successful_normalized += 1
-    
-    log(f"Successfully read {successful_reads} and normalized {successful_normalized} mount files")    
+
+    log(f"Successfully read {successful_reads} and normalized {successful_normalized} mount files")
     return mounts_data
-    
 
 
 # @dataclass
