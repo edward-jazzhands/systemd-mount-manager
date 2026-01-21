@@ -4,6 +4,7 @@ Contains the Settings tab for Systemd Mount Manager.
 
 # Python imports
 from __future__ import annotations
+from collections.abc import Iterable
 from enum import Enum
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from textual import on, log, work
 import textual.events as events
 from textual.app import ComposeResult
 from textual.widgets import TabPane, Button, TextArea, Input, Static, Switch
+from textual.widgets._input import InputValidationOn
 from textual.validation import ValidationResult, Validator  # , Function, Number
 from textual.containers import (
     Container,
@@ -158,88 +160,44 @@ class ChangeManagedMountsDirScreen(ModalScreen[MountsDirScreenResult]):
             self.dismiss(MountsDirScreenResult.PROCEED_WITHOUT_MIGRATE)
 
 
-class SettingType(Enum):
-    INPUT = 1
-    SWITCH = 2
-    BUTTON = 3
-
-
-class SettingOption(Container):
-    def __init__(
-        self,
-        widget_id: str,
-        description: str,
-        setting_type: SettingType,
-        value_str: str | None = None,
-        value_bool: bool = False,
-        validator: Validator | None = None,
-    ) -> None:
-        super().__init__()
-        self.widget_id = widget_id
-        self.description = description
-        self.value_str = value_str
-        self.value_bool = value_bool
-        self.setting_type = setting_type
-        self.validator = validator
-
-    def compose(self) -> ComposeResult:
-        with Horizontal(classes="setting-option-header"):
-            yield Static(self.description, classes="setting-description")
-            # if its a switch or button, yield in same horizontal
-            if self.setting_type == SettingType.SWITCH:
-                yield Container()
-                yield Switch(id=self.widget_id)
-                self.add_class("h3")
-            elif self.setting_type == SettingType.BUTTON:
-                yield Container()
-                yield Button(self.value_str, id=self.widget_id)
-        if self.setting_type == SettingType.INPUT:
-            yield Input(
-                self.value_str,
-                id=self.widget_id,
-                validators=self.validator,
-                validate_on=["submitted", "blur"],
-            )
-            self.add_class("h6")
-
 
 class SettingsTab(TabPane):
+
+    _validate_on: list[InputValidationOn] = ["submitted", "blur"]
 
     def compose(self) -> ComposeResult:
         with ScrollableContainer(classes="content-container"):
             with Container(id="settings-container", classes="card-container center-middle"):
-                yield SettingOption(
-                    widget_id="managed-mounts-dir",
-                    description="Directory to store managed mounts. \nChanging this"
-                    " will prompt for options before committing changes.",
-                    value_str="~/.config/systemd-mount-manager/managed-mounts",
-                    setting_type=SettingType.INPUT,
-                    validator=ValidPath(),
-                )
-                # yield SettingOption(
-                #     widget_id="fspicker-button",
-                #     description="Choose a directory to store managed mounts",
-                #     value_str="Click to choose",
-                #     setting_type=SettingType.BUTTON,
-                # )
-                with Horizontal(classes="h2"):
-                    yield Container()
+
+                with Container(classes="setting-option hauto"):
+                    # with Horizontal(classes="setting-option-header"):
                     yield Static(
-                        "Choose a directory to store managed mounts", classes="compact-static"
+                        "Directory to store managed mounts \nChanging this"
+                        " will prompt for options before committing changes.", classes="setting-description"
                     )
-                    yield Button("Choose", id="fspicker-button", compact=True)
-                yield SettingOption(
-                    widget_id="smb-share",
-                    description="The SMB share to mount (some extra info here)",
-                    value_str="brents-data",
-                    setting_type=SettingType.INPUT,
-                )
-                yield SettingOption(
-                    widget_id="test-switch",
-                    description="Test Switch. Does nothing.",
-                    value_bool=False,
-                    setting_type=SettingType.SWITCH,
-                )
+                    with Horizontal(classes="h2"):
+                        yield Static(
+                            "Open directory picker", classes="compact-static"
+                        )
+                        yield Button("Choose", id="fspicker-button", compact=True)
+                        yield Container()
+                    yield Input(
+                        "~/.config/systemd-mount-manager/managed-mounts",
+                        id="managed-mounts-dir",
+                        validators=ValidPath(),
+                        validate_on=SettingsTab._validate_on
+                    )
+
+                with Horizontal(classes="setting-option h3"):
+
+                    yield Container()
+                    yield Switch(id="switch-1")
+
+                with Horizontal(classes="setting-option h3"):
+
+                    yield Container()
+                    yield Button("Test button", id="test-button")
+
                 with Horizontal(classes="save-cancel-buttons"):
                     yield Container()
                     yield Button("Save Changes", id="save-button")

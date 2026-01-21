@@ -110,20 +110,17 @@ ManagedMountWidget {
     margin: 1 0 0 0;
 }
 
-SettingOption {
-    height: 6;
-    width: 1fr;
+.setting-option {
     margin: 0 0 1 0;
-    # padding: 0 0 0 1;
     background: $boost;
     border-left: outer $panel-lighten-2;
     .setting-description { 
         width: auto;
         height: 3;
         content-align: left middle;
-        padding: 0 2;
+        padding: 0 1;
     }
-    #setting-input { width: 1fr; }   
+    # setting-input { width: 1fr; }   
     # setting-switch { background: green; }
 }
 

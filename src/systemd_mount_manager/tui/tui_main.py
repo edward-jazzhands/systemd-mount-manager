@@ -49,7 +49,8 @@ class CustomHeader(Container):
         with Horizontal():
             yield Static(header_ascii.strip(), id="ascii_banner")
             with Container(id="header_info"):
-                yield Static(f"Dev Mode: {False}")
+                if self.app._is_devtools_connected:
+                    yield Static(f"Dev Mode")
 
 
 # @dataclass
@@ -70,6 +71,7 @@ class TextualApp(App[None]):
 
     # def __init__(self) -> None:
     #     super().__init__()
+        # self._is_devtools_connected
     # self.app_data = AppData(dev_mode=dev)
     # self.app_data.display = False
 
@@ -109,6 +111,9 @@ class TextualApp(App[None]):
 
 
 def tui_run(dev: bool = False) -> None:
+    """When `dev` is True, the python process will restart itself using
+    the Textual dev-tools package and run this file using Textual dev mode.
+    """
     
     if not dev:    
         app = TextualApp()
@@ -120,9 +125,9 @@ def tui_run(dev: bool = False) -> None:
         full_command = ["uv", "run", "textual", "run", "--dev", str(script_path)]
         try:
             os.execvp("uv", full_command)
-        except:
-            print("ERROR: UV command failed to execute.")
-
+        except OSError as e:
+            print(f"ERROR: Failed to execute uv command: {e}", file=sys.stderr)
+            sys.exit(1)
         
 if __name__ == "__main__":
     # When Textual dev-tools runs this file, it'll run tui_run() again with

@@ -145,7 +145,7 @@ def cli(ctx: click.Context, dev: bool) -> None:
         if dev is False:
             raise click.Abort("systemd not detected.")
         else:
-            click.echo("systemd not detected, but running anyway because dev mode is active.")
+            click.echo("Running anyway because dev mode is active...")
     
     # Initialization
     try:
@@ -156,7 +156,7 @@ def cli(ctx: click.Context, dev: bool) -> None:
         if configwrite_result is True:  # means file was created
             debug_msg("New config file was created", dev)
         else:  # file was force overwritten
-            debug_msg("Config was overwritten with default values", dev)
+            debug_msg("Config was overwritten with default values.", dev)
 
 
 @cli.command()

@@ -1,0 +1,116 @@
+Common tmpfs options you might want:
+
+rw - read-write (necessary for /tmp)
+nosuid - don't allow setuid binaries
+nodev - don't allow device files
+noexec - don't allow execution (usually not wanted for /tmp)
+size=512M - limit size (defaults to 50% of RAM)
+mode=1777 - set permissions (sticky bit + world writable, typical for /tmp)
+
+
+# --------------------------------------------------------------------
+# Basic virtual filesystems
+# These do not depend on real disks and are great for early testing.
+# --------------------------------------------------------------------
+
+# proc is a pseudo-filesystem exposing process info
+proc            /proc           proc    defaults                0 0
+
+# sysfs exposes kernel objects
+sysfs           /sys            sysfs   defaults                0 0
+
+# devpts backs /dev/pts for pseudo-terminals
+devpts          /dev/pts        devpts  gid=5,mode=620          0 0
+
+
+# --------------------------------------------------------------------
+# tmpfs examples
+# tmpfs is memory-backed and extremely flexible for option testing.
+# --------------------------------------------------------------------
+
+# Simple tmpfs mount with default options
+tmpfs           /tmp            tmpfs   defaults                0 0
+
+# Simple tmpfs mount with read-write access
+tmpfs           /tmp            tmpfs   rw,nosuid,nodev         0 0
+
+# tmpfs with explicit size and permissions
+tmpfs           /var/cache/tmp  tmpfs   size=512M,mode=0755     0 0
+
+# bigger exampl
+tmpfs           /tmp            tmpfs   rw,nosuid,nodev,size=2G,mode=1777   0 0
+
+# tmpfs with systemd-specific options embedded in fstab
+tmpfs           /srv/auto       tmpfs   defaults,x-systemd.automount,x-systemd.idle-timeout=30s  0 0
+
+
+# --------------------------------------------------------------------
+# Loopback / block-style examples (purely illustrative)
+# These do not need to exist for parser testing.
+# --------------------------------------------------------------------
+
+# Traditional device-based mount
+/dev/sda1       /mnt/data       ext4    defaults                0 2
+
+# Read-only mount
+/dev/sdb1       /mnt/backup     ext4    ro,noatime              0 2
+
+# UUID-based mount (very common in real systems)
+UUID=1234-ABCD  /mnt/by-uuid    ext4    defaults                0 2
+
+# LABEL-based mount
+LABEL=MYDISK    /mnt/by-label   ext4    defaults                0 2
+
+# Mount that should not prevent boot if missing
+UUID=DEAD-BEEF  /mnt/optional   ext4    defaults,nofail         0 2
+
+
+# --------------------------------------------------------------------
+# Network and ordering-related examples
+# These are important for systemd dependency logic.
+# --------------------------------------------------------------------
+
+# NFS mount marked as network-dependent
+server:/export  /mnt/nfs        nfs     defaults,_netdev        0 0
+
+# CIFS/SMB mount with credentials file
+//server/share  /mnt/cifs       cifs    credentials=/root/.smbcred,_netdev  0 0
+
+# Network mount with explicit systemd dependency
+server:/slow    /mnt/slow       nfs     defaults,_netdev,x-systemd.requires=network-online.target  0 0
+
+
+# --------------------------------------------------------------------
+# Path and naming edge cases
+# These stress systemd's unit name escaping rules.
+# --------------------------------------------------------------------
+
+# Deeply nested mount point
+tmpfs           /var/lib/my-app/cache   tmpfs   defaults        0 0
+
+# Mount point with dashes and numbers
+tmpfs           /srv/app-01/data        tmpfs   defaults        0 0
+
+# Trailing slash (legal, but interesting to normalize)
+tmpfs           /opt/test/              tmpfs   defaults        0 0
+
+
+# --------------------------------------------------------------------
+# Automount and timeout behavior
+# These translate directly into .automount units in systemd.
+# --------------------------------------------------------------------
+
+# Automount on first access
+tmpfs           /mnt/on-demand  tmpfs   defaults,x-systemd.automount  0 0
+
+# Automount with idle unmount
+tmpfs           /mnt/idle       tmpfs   defaults,x-systemd.automount,x-systemd.idle-timeout=1min  0 0
+
+
+# --------------------------------------------------------------------
+# Intentionally boring but realistic "server" style mounts
+# These help validate that your output looks sane.
+# --------------------------------------------------------------------
+
+UUID=AAAA-BBBB  /               ext4    defaults                0 1
+UUID=CCCC-DDDD  /home           ext4    defaults                0 2
