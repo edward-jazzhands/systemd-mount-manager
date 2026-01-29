@@ -18,6 +18,15 @@ from textual.binding import Binding
 from textual.widgets import Static, Switch, TextArea  # , Button, Select
 
 
+# Goals:
+# 1) Add "edit" button to open user's $EDITOR to edit fstab - suspend app
+#      using Textual's "suspend" feature
+# 2) Auto-refresh the fstab data after editing
+# 3) Parse the fstab entries and display them in a table
+# 4) Add coloring / syntax highlighting to the fstab entries
+# 5) Find any .mount files generated in /usr/run/system
+
+
 class FstabsCard(Container):
 
     def compose(self) -> ComposeResult:

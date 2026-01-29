@@ -1,0 +1,21 @@
+name: my-agent
+
+services:
+  agent-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+      args:
+        USER_ID: ${USER_ID:-1001}
+        GROUP_ID: ${GROUP_ID:-1001}
+    image: agent-sandbox:latest
+    hostname: agent-sandbox
+    container_name: agent-sandbox
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+
+# run with:
+# sudo docker compose up --build -d

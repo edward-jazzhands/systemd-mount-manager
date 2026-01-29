@@ -3,14 +3,14 @@ list-tasks:
 
 # Install the package
 install:
-    #!/usr/bin/env bash
-    ./setup-scripts/install-deps.sh
-    uv venv --python-preference only-system --system-site-packages
-    uv sync
+  #!/usr/bin/env bash
+  ./setup-scripts/install-deps.sh
+  uv venv --python-preference only-system --system-site-packages
+  uv sync
 
 # Run the original bash script
 run-orig:
-    uv run src/systemd_mount_manager/original.py
+  uv run src/systemd_mount_manager/original.py
 
 # Run the CLI, passing through any flags
 run flags='':
@@ -27,6 +27,11 @@ run-gui:
 # Run the console
 console:
 	uv run textual console -x EVENT -x SYSTEM
+
+# Build and run the agent sandbox docker container
+sandbox:
+  sudo docker compose up --build -d
+  sudo docker exec -it agent-sandbox bash
 
 # Runs ruff, exits with 0 if no issues are found
 lint:

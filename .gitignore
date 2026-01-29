@@ -11,7 +11,7 @@ snapshot_report.html
 error.*
 
 # Virtual environments
-.venv
+.venv*
 
 # tooling stuff
 *_cache/
