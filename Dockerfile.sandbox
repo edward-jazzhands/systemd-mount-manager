@@ -5,6 +5,8 @@ ARG OWNER_UID
 ARG OWNER_GID
 ARG OWNER_NAME
 
+# NOTE: Adding the owner account like this is purely for convenience and is
+# not required for the sandbox to work. It lets the agent see who owns the files
 RUN groupadd -g ${OWNER_GID} ${OWNER_NAME} && \
     useradd -u ${OWNER_UID} -g ${OWNER_GID} -s /bin/bash ${OWNER_NAME}
 
@@ -32,21 +34,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# USER ${AGENT_NAME}
-WORKDIR /workspace
-
-RUN mkdir -p /home/root/.local/bin
+RUN mkdir -p /root/.local/bin
 
 # Install UV   - CHANGED DUE TO ISSUES. NO IDEA.
 # RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install UV  - DOWNLOADING BINARY DIRECTLY
 RUN curl -L https://github.com/astral-sh/uv/releases/download/0.9.27/uv-x86_64-unknown-linux-gnu.tar.gz \
-  | tar -xz -C "/home/root/.local/bin" && \
-  mv /home/root/.local/bin/uv-x86_64-unknown-linux-gnu/* /home/root/.local/bin
+  | tar -xz -C "/root/.local/bin" && \
+  mv /root/.local/bin/uv-x86_64-unknown-linux-gnu/* /root/.local/bin
 
 # Add UV to PATH
-ENV PATH="/home/root/.local/bin:$PATH"
+ENV PATH="/root/.local/bin:$PATH"
 
 # Container needs to create its own venv
 ENV UV_PROJECT_ENVIRONMENT=.venv-agent
@@ -55,17 +54,27 @@ ENV UV_PROJECT_ENVIRONMENT=.venv-agent
 # ENV PATH="/workspace/.venv-agent/bin:$PATH"
 
 # RUN uv python install 3.12
-RUN /home/root/.local/bin/uv python install 3.12
+RUN /root/.local/bin/uv python install 3.12
 
 # Just - this is so the agent can utilize the justfile
-RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to "/home/root/.local/bin"
+RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to "/root/.local/bin"
 
 # OpenCode
 RUN curl -fsSL https://opencode.ai/install | bash
 
 # Add OpenCode to PATH
-ENV PATH="/home/root/.opencode/bin:$PATH"
+# ENV PATH="/root/.opencode/bin:$PATH"
 
+RUN echo "umask 002" >> /etc/profile
 
-ENTRYPOINT ["tail", "-f", "/dev/null"]
-# Use docker-compose.yaml to build
+RUN cat > /entrypoint.sh <<'EOF'
+#!/bin/sh
+umask 0002
+exec "$@"
+EOF
+
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Use `just sandbox` to build and run
