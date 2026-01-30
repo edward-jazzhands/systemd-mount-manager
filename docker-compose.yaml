@@ -6,8 +6,10 @@ services:
       context: .
       dockerfile: Dockerfile.sandbox
       args:
-        USER_ID: ${USER_ID:-1001}
-        GROUP_ID: ${GROUP_ID:-1001}
+        # Remember ths depends on user namespace mapping:
+        OWNER_UID: ${OWNER_UID:-1000}
+        OWNER_GID: ${OWNER_GID:-1000}
+        OWNER_NAME: ${OWNER_NAME:-brent}
     image: agent-sandbox:latest
     hostname: agent-sandbox
     container_name: agent-sandbox

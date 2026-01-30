@@ -1,12 +1,12 @@
 FROM debian:stable-slim
 
-# Create a non-root user for the agent
-# docker-compose.yaml sets these values, default 1001:1001
-ARG USER_ID
-ARG GROUP_ID
+# docker-compose.yaml sets these values
+ARG OWNER_UID
+ARG OWNER_GID
+ARG OWNER_NAME
 
-RUN groupadd -g ${GROUP_ID} agent-1 && \
-    useradd -m -u ${USER_ID} -g ${GROUP_ID} -s /bin/bash agent-1
+RUN groupadd -g ${OWNER_GID} ${OWNER_NAME} && \
+    useradd -u ${OWNER_UID} -g ${OWNER_GID} -s /bin/bash ${OWNER_NAME}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # --force-confdef = (Force configuration defaults)
@@ -32,21 +32,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-USER agent-1
+# USER ${AGENT_NAME}
 WORKDIR /workspace
 
-RUN mkdir -p /home/agent-1/.local/bin
+RUN mkdir -p /home/root/.local/bin
 
-# Install UV   - CHANGED DUE TO ISSUES. NO FUCKING IDEA.
+# Install UV   - CHANGED DUE TO ISSUES. NO IDEA.
 # RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install UV  - TEST DOWNLOADING BINARY DIRECTLY
+# Install UV  - DOWNLOADING BINARY DIRECTLY
 RUN curl -L https://github.com/astral-sh/uv/releases/download/0.9.27/uv-x86_64-unknown-linux-gnu.tar.gz \
-  | tar -xz -C "/home/agent-1/.local/bin" && \
-  mv /home/agent-1/.local/bin/uv-x86_64-unknown-linux-gnu/* /home/agent-1/.local/bin
+  | tar -xz -C "/home/root/.local/bin" && \
+  mv /home/root/.local/bin/uv-x86_64-unknown-linux-gnu/* /home/root/.local/bin
 
 # Add UV to PATH
-ENV PATH="/home/agent-1/.local/bin:$PATH"
+ENV PATH="/home/root/.local/bin:$PATH"
 
 # Container needs to create its own venv
 ENV UV_PROJECT_ENVIRONMENT=.venv-agent
@@ -55,16 +55,16 @@ ENV UV_PROJECT_ENVIRONMENT=.venv-agent
 # ENV PATH="/workspace/.venv-agent/bin:$PATH"
 
 # RUN uv python install 3.12
-RUN /home/agent-1/.local/bin/uv python install 3.12
+RUN /home/root/.local/bin/uv python install 3.12
 
 # Just - this is so the agent can utilize the justfile
-RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to "$HOME/.local/bin"
+RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to "/home/root/.local/bin"
 
 # OpenCode
 RUN curl -fsSL https://opencode.ai/install | bash
 
 # Add OpenCode to PATH
-ENV PATH="/home/agent-1/.opencode/bin:$PATH"
+ENV PATH="/home/root/.opencode/bin:$PATH"
 
 
 ENTRYPOINT ["tail", "-f", "/dev/null"]
