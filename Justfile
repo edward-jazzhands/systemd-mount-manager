@@ -30,8 +30,7 @@ console:
 
 # Build and run the agent sandbox docker container
 sandbox:
-  sudo docker compose up --build -d
-  sudo docker exec -it agent-sandbox bash
+  sudo docker compose run --rm --build agent-sandbox
 
 # Runs ruff, exits with 0 if no issues are found
 lint:

@@ -10,6 +10,8 @@ services:
         OWNER_UID: ${OWNER_UID:-1000}
         OWNER_GID: ${OWNER_GID:-1000}
         OWNER_NAME: ${OWNER_NAME:-brent}
+    command: ["/root/.opencode/bin/opencode"]
+    # command: ["/bin/bash"]
     image: agent-sandbox:latest
     hostname: agent-sandbox
     container_name: agent-sandbox
@@ -18,6 +20,8 @@ services:
     working_dir: /workspace
     stdin_open: true
     tty: true
+    environment:
+      TZ: America/Los_Angeles
 
 # run with:
-# sudo docker compose up --build -d
+# `just sandbox`
