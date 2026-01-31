@@ -8,21 +8,9 @@ install:
   uv venv --python-preference only-system --system-site-packages
   uv sync
 
-# Run the original bash script
-run-orig:
-  uv run src/systemd_mount_manager/original.py
-
 # Run the CLI, passing through any flags
-run flags='':
-	uv run systemd-mount-manager {{flags}}
-
-# Runs the TUI in development mode
-run-tui:
-	uv run textual run --dev src/systemd_mount_manager/tui/tui_main.py
-
-# Runs the GUI in development mode
-run-gui:
-  uv run systemd-mount-manager --gui
+run flags='' flags2='':
+	uv run systemd-mount-manager {{flags}} {{flags2}}
 
 # Run the console
 console:
@@ -50,7 +38,7 @@ test:
 
 # Run the Nox testing suite for comprehensive testing.
 # This will run pytest against all versions of Textual and Python
-# specified in the noxfile.py
+# specified in the noxfile.py as well as linting and type checking
 nox:
   nox
   

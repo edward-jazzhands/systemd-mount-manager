@@ -113,6 +113,8 @@ class TextualApp(App[None]):
 def tui_run(dev: bool = False) -> None:
     """When `dev` is True, the python process will restart itself using
     the Textual dev-tools package and run this file using Textual dev mode.
+    
+    ! Dev option requires UV to be installed.
     """
     
     if not dev:    
@@ -122,7 +124,7 @@ def tui_run(dev: bool = False) -> None:
     else:
         import os
         script_path = Path(__file__).resolve()
-        full_command = ["uv", "run", "textual", "run", "--dev", str(script_path)]
+        full_command = ["uv", "run", "textual", "run", "--dev", f"{script_path}"]
         try:
             os.execvp("uv", full_command)
         except OSError as e:
@@ -131,6 +133,7 @@ def tui_run(dev: bool = False) -> None:
         
 if __name__ == "__main__":
     # When Textual dev-tools runs this file, it'll run tui_run() again with
-    # dev bool set to False - but this block of code is already being run
-    # by the Textual dev-tools. It will launch the Textual app in dev mode.
-    tui_run()
+    # dev bool set to False - but this main guard down here would only be run
+    # by the Textual dev-tools. So we're already in dev mode. It's a bit confusing
+    # wording, but it's the best I could come up with.
+    tui_run(dev=False)

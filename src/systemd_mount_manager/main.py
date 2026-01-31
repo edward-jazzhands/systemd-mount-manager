@@ -107,6 +107,7 @@ def check_systemd(dev: bool) -> bool:
 
 def tui_mode(dev: bool):
 
+    # lazy loading
     from systemd_mount_manager.tui import tui_run
 
     if dev:
