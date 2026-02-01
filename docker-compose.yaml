@@ -1,17 +1,13 @@
-name: my-agent
+name: agent
 
 services:
   agent-sandbox:
     build:
       context: .
       dockerfile: Dockerfile.sandbox
-      args:
-        # Remember ths depends on user namespace mapping:
-        OWNER_UID: ${OWNER_UID:-1000}
-        OWNER_GID: ${OWNER_GID:-1000}
-        OWNER_NAME: ${OWNER_NAME:-brent}
+    # Set read_only to false to give agent ability to install system packages
+    read_only: true
     command: ["/root/.opencode/bin/opencode"]
-    # command: ["/bin/bash"]
     image: agent-sandbox:latest
     hostname: agent-sandbox
     container_name: agent-sandbox
@@ -22,6 +18,22 @@ services:
     tty: true
     environment:
       TZ: America/Los_Angeles
+    cap_drop:
+      - ALL
+    # add these when needed
+    # cap_add:  
+    #   - CHOWN
+    #   - DAC_OVERRIDE
+    #   - FOWNER
+    #   - SETGID
+    #   - SETUID
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2048M
 
 # run with:
 # `just sandbox`

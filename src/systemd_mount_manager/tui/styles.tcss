@@ -169,6 +169,7 @@ ManagedMountWidget {
 }
 
 FstabsCard {
+    Button { margin: 0 1; }
     TextArea {
         height: auto;
     }

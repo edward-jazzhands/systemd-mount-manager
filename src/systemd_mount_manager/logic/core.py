@@ -1,9 +1,12 @@
 # python standard lib
 from __future__ import annotations
 import sys
+import os
+import shutil
 from typing import Sequence  # , NamedTuple
 import subprocess
 import json
+import shlex
 
 # from pathlib import Path
 # from dataclasses import dataclass
@@ -155,3 +158,27 @@ def run_stdio_mode():
         except Exception as e:
             print(json.dumps({"status": "error", "error": str(e)}))
             sys.stdout.flush()
+
+
+def get_editor() -> str:
+    """Get the user's preferred editor
+    
+    Returns:
+        str: The full path to the editor
+    """
+    editor = os.environ.get('VISUAL') or os.environ.get('EDITOR')
+    
+    if editor:
+        editor_cmd = editor.split()[0]
+        full_path = shutil.which(editor_cmd)
+        if full_path:
+            # Return full path, replacing just the command part to preserve args
+            return editor.replace(editor_cmd, full_path, 1)
+    
+    return (
+        shutil.which('nano') or
+        shutil.which('nvim') or
+        shutil.which('vim') or
+        shutil.which('vi') or
+        '/usr/bin/vi'  # Absolute fallback
+    )

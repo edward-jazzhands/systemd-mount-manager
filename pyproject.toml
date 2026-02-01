@@ -28,6 +28,7 @@ dependencies = [
     "textual-slidecontainer>=0.6.0",
     "textual>=5.0.0,<6.0.0",
     "textual-fspicker>=0.6.0",
+    "tree-sitter-languages>=1.10.2",
 ]
 
 

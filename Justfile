@@ -14,7 +14,7 @@ run flags='' flags2='':
 
 # Run the console
 console:
-	uv run textual console -x EVENT -x SYSTEM
+	uv run textual console -x EVENT -x SYSTEM -x WORKER
 
 # Build and run the agent sandbox docker container
 sandbox:

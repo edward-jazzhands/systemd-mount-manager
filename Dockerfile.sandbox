@@ -1,15 +1,5 @@
 FROM debian:stable-slim
 
-# docker-compose.yaml sets these values
-ARG OWNER_UID
-ARG OWNER_GID
-ARG OWNER_NAME
-
-# NOTE: Adding the owner account like this is purely for convenience and is
-# not required for the sandbox to work. It lets the agent see who owns the files
-RUN groupadd -g ${OWNER_GID} ${OWNER_NAME} && \
-    useradd -u ${OWNER_UID} -g ${OWNER_GID} -s /bin/bash ${OWNER_NAME}
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # --force-confdef = (Force configuration defaults)
     # --force-confold = (Force keep old files during upgrades)
