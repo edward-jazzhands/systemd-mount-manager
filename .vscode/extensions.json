@@ -2,6 +2,5 @@
     "recommendations": [
         "textualize.textual-syntax-highlighter",
         "nefrob.vscode-just-syntax"
-        
     ]
 }

@@ -51,7 +51,7 @@ _log_writer = TextualLogWriter()
 @dataclass
 class SettingsPayload:
     managed_mounts_dir: str
-    hide_startup_gui_warning: bool
+    show_sudo_warning: bool
 
 
 config = configparser.ConfigParser()
@@ -95,7 +95,7 @@ def write_default_config(force: bool = False) -> bool:
     # Here create the default config
     config["DEFAULT"] = {
         "managed_mounts_dir": DEFAULT_MOUNTFILES_DIR.as_posix(),
-        "hide_startup_gui_warning": "False",
+        "show_sudo_warning": "True",
     }
     with open(CONFIG_PATH, "w") as configfile:
         config.write(configfile)
@@ -111,8 +111,8 @@ def load_settings() -> SettingsPayload:
     Import the SettingsPayload dataclass for type checking."""
 
     return SettingsPayload(
-        managed_mounts_dir=config["DEFAULT"]["managed_mounts_dir"],
-        hide_startup_gui_warning=config["DEFAULT"]["hide_startup_gui_warning"],
+        managed_mounts_dir=config.get("DEFAULT", "managed_mounts_dir"),
+        show_sudo_warning=config.getboolean("DEFAULT", "show_sudo_warning"),
     )
 
 

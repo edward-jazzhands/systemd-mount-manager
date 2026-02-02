@@ -5,6 +5,8 @@ Contains the fstab tab for Systemd Mount Manager.
 # Python imports
 from __future__ import annotations
 import subprocess
+from enum import Enum
+from pathlib import Path
 
 # from typing import Any  # , cast
 # import sys
@@ -12,14 +14,17 @@ import subprocess
 
 # Textual imports
 from textual import on, work  # , log
+import textual.events as events
 from textual.app import ComposeResult
 from textual.widgets import TabPane, Placeholder, Button
-from textual.containers import Container, Horizontal, ScrollableContainer
+from textual.containers import Container, Horizontal, ScrollableContainer, VerticalScroll
 from textual.binding import Binding
 from textual.widgets import Static, Switch, TextArea  # , Button, Select
+from textual.screen import ModalScreen
 
 # Local imports
 import systemd_mount_manager.logic as logic
+from systemd_mount_manager.tui.screens import SudoWarningScreen, SudoWarningScreenResult
 
 # Goals:
 # 1) DONE - Add "edit" button to open user's $EDITOR to edit fstab - suspend app
@@ -28,6 +33,7 @@ import systemd_mount_manager.logic as logic
 # 3) Parse the fstab entries and display them in a table
 # 4) Add coloring / syntax highlighting to the fstab entries
 # 5) Find any .mount files generated in /usr/run/system
+# 6) Add warning screen when opening the editor about sudo/privileges
 
 
 class FstabsCard(Container):
@@ -58,6 +64,14 @@ class FstabsCard(Container):
     @on(Button.Pressed, "#edit-button")
     @work
     async def edit_button_pressed(self) -> None:
+
+        warning_mode: bool = (logic.config.config["DEFAULT"]["show_sudo_warning"] == "True")
+        if warning_mode:
+            result = await self.app.push_screen_wait(SudoWarningScreen("Editing /etc/fstab"))
+            if result == SudoWarningScreenResult.CANCEL:
+                return
+            elif result == SudoWarningScreenResult.PROCEED_DONT_SHOW_AGAIN:
+                logic.config.config["DEFAULT"]["show_sudo_warning"] = "False"
         
         try:
             editor: str = logic.core.get_editor()

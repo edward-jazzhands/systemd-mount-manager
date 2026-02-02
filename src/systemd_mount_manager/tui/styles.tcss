@@ -115,10 +115,11 @@ ManagedMountWidget {
     background: $boost;
     border-left: outer $panel-lighten-2;
     .setting-description { 
-        width: auto;
-        height: 3;
+        width: 1fr;
+        height: auto;
         content-align: left middle;
         padding: 0 1;
+        # background: $boost;
     }
     # setting-input { width: 1fr; }   
     # setting-switch { background: green; }
@@ -177,5 +178,6 @@ FstabsCard {
 
 .save-cancel-buttons {
     height: 3;
+    dock: bottom;
     #save-button { margin: 0 1; }
 }

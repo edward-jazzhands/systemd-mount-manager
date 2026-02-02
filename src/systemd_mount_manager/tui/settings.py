@@ -31,6 +31,7 @@ from textual.containers import (
 from textual.binding import Binding
 from textual.screen import ModalScreen
 import textual_fspicker as fspicker
+import textual_fspicker.parts
 
 # Local imports
 import systemd_mount_manager.logic as logic
@@ -64,6 +65,7 @@ class ValidPath(Validator):
 
         log(f"Valid path: {path.as_posix()}")
         return self.success()
+
 
 
 class MountsDirScreenResult(Enum):
@@ -160,6 +162,15 @@ class ChangeManagedMountsDirScreen(ModalScreen[MountsDirScreenResult]):
             self.dismiss(MountsDirScreenResult.PROCEED_WITHOUT_MIGRATE)
 
 
+class CustomFSPicker(fspicker.SelectDirectory):
+
+
+    def on_mount(self) -> None:
+        """Configure the dialog once the DOM is ready."""
+        navigation = self.query_one(fspicker.parts.DirectoryNavigation)
+        navigation.show_files = False
+        navigation.show_hidden = True
+        self.query_one(fspicker.parts.CurrentDirectory).current_directory = navigation.location
 
 class SettingsTab(TabPane):
 
@@ -175,12 +186,13 @@ class SettingsTab(TabPane):
                         "Directory to store managed mounts \nChanging this"
                         " will prompt for options before committing changes.", classes="setting-description"
                     )
-                    with Horizontal(classes="h2"):
+                    with Horizontal(classes="hauto margin-1-0"):
                         yield Static(
                             "Open directory picker", classes="compact-static"
                         )
                         yield Button("Choose", id="fspicker-button", compact=True)
-                        yield Container()
+                        yield Container(classes="h1")
+                    # CHANGE THIS: must pull from config
                     yield Input(
                         "~/.config/systemd-mount-manager/managed-mounts",
                         id="managed-mounts-dir",
@@ -188,10 +200,15 @@ class SettingsTab(TabPane):
                         validate_on=SettingsTab._validate_on
                     )
 
-                with Horizontal(classes="setting-option h3"):
-
-                    yield Container()
-                    yield Switch(id="switch-1")
+                with Horizontal(classes="setting-option hauto"):
+                    yield Static(
+                        "Show warning before performing privileged operations. \n"
+                        "This does not affect whether you'll be prompted for your password "
+                        "by your OS. The password is never read by this app.",
+                        classes="setting-description"
+                    )
+                    # yield Container()
+                    yield Switch(id="show-sudo-warning-switch")
 
                 with Horizontal(classes="setting-option h3"):
 
@@ -213,11 +230,13 @@ class SettingsTab(TabPane):
     @on(Button.Pressed, "#fspicker-button")
     @work(exit_on_error=False)
     async def fspicker_button_pressed(self, event: Button.Pressed) -> None:
-        result = await self.app.push_screen_wait(fspicker.SelectDirectory(location=Path.home()))
+
+        picker_instance = CustomFSPicker(location=Path.home())
+        result = await self.app.push_screen_wait(picker_instance)
         if result:
             self.query_one("#managed-mounts-dir", Input).value = result.as_posix()
 
-    @on(Switch.Changed, "#test-switch")
+    @on(Switch.Changed, "#show-sudo-warning-switch")
     def switch_changed(self, event: Switch.Changed) -> None:
         self.notify(f"Switch {event.switch.id} changed to {event.value}")
 
