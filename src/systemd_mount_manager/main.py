@@ -1,17 +1,28 @@
 from __future__ import annotations
+from cgi import FieldStorage
 from click import pass_context
 import sys
 import subprocess
 import os
 
+# third party libs
+import click
+
+# local imports
 import systemd_mount_manager.logic as logic
 
+### Global dev mode flag -
+# No need to change this directly. Use:
+# 1) --dev flag on CLI
+# 2) set SMM_DEV_MODE env var to a truthy value (e.g. 1, true, etc.)
+# 3) create empty flag file at ~/.config/systemd-mount-manager/.devmode
+DEV_MODE = False
 
-try:
-    import click
-except ImportError:
-    print("Warning: click not found. Did you use --system-site-packages?", file=sys.stderr)
-    sys.exit(1)
+# try:
+#     import click
+# except ImportError:
+#     print("Warning: click not found. Did you use --system-site-packages?", file=sys.stderr)
+#     sys.exit(1)
 
 
 # ANSI color codes
@@ -69,7 +80,7 @@ def check_systemd(dev: bool) -> bool:
     # Check PID 1
     ps_result = subprocess.run(["ps", "-p", "1", "-o", "comm="], capture_output=True, text=True)
     pid1_is_systemd = ps_result.stdout.strip() == "systemd"
-    
+
     # Check systemctl
     try:
         systemctl_result = subprocess.run(
@@ -105,14 +116,35 @@ def check_systemd(dev: bool) -> bool:
         return False
 
 
-def tui_mode(dev: bool):
+def gui_mode(ctx: click.Context) -> None:
+
+    gui_available = is_graphical_session(ctx.obj)
+    if gui_available:
+        from systemd_mount_manager.gui import gui_run
+
+        if ctx.obj["DEV_MODE"]:
+            click.pause("DEV MODE: Press any key to continue")
+        gui_run(ctx.obj["DEV_MODE"])
+    else:
+        click.echo(
+            "Attention: You selected GUI mode, but systemd Mount Manager could not detect "
+            "a graphical desktop. The program will fall back to TUI mode."
+        )
+        if click.confirm("Continue? [default yes]", default=True, show_default=True):
+            tui_mode(ctx.obj)
+        else:
+            click.echo("Cancelled")
+            return
+
+
+def tui_mode(ctx: click.Context) -> None:
 
     # lazy loading
     from systemd_mount_manager.tui import tui_run
 
-    if dev:
+    if ctx.obj["DEV_MODE"]:
         click.pause("DEV MODE: Press any key to continue")
-    tui_run(dev)
+    tui_run(ctx.obj["DEV_MODE"])
 
 
 # @click.group() creates a command group that can contain subcommands
@@ -125,21 +157,15 @@ def tui_mode(dev: bool):
 
 
 @click.group()
-@click.option(
-    "--dev",
-    is_flag=True,
-    default=False,
-    help="Development mode - [Warning]: resets config to default",
-)
 @click.pass_context
-def cli(ctx: click.Context, dev: bool) -> None:
-    """SystemD Mount Manager - The easiest way to manage network mounts on Linux.
-    
-    There's 3 ways to use the program: GUI mode, TUI mode, and the CLI.
+def cli(ctx: click.Context) -> None:
+    """systemd Mount Manager - The easiest way to manage network mounts on Linux.
+
+    There's 2 ways to use the program: TUI mode, and the CLI.
     Note that systemd is required in order for the program to start."""
 
-    ctx.obj: bool = dev
-    debug_msg("DEV MODE is ON", dev)
+    dev = logic.core.check_dev_env_var()
+    ctx.obj["DEV_MODE"] = dev
 
     sysd_check = check_systemd(dev)
     if sysd_check is False:
@@ -147,17 +173,20 @@ def cli(ctx: click.Context, dev: bool) -> None:
             raise click.Abort("systemd not detected.")
         else:
             click.echo("Running anyway because dev mode is active...")
-    
+
     # Initialization
-    try:
-        configwrite_result = logic.config.write_default_config(force=dev)
-    except FileExistsError:
-        pass
+
+    if logic.config.config_startup():
+        debug_msg("Config startup successful", dev)
     else:
-        if configwrite_result is True:  # means file was created
-            debug_msg("New config file was created", dev)
-        else:  # file was force overwritten
-            debug_msg("Config was overwritten with default values.", dev)
+        click.echo(
+            f"{Color.RED}Attention:{Color.NC} A configuration error has prevented "
+            "the program from starting. Up to the last 5 errors are shown below."
+        )
+        errors = logic.core.error_storage.get_errors()
+        for e in errors[-5:]:
+            click.echo(str(e))
+
 
 
 @cli.command()
@@ -165,23 +194,7 @@ def cli(ctx: click.Context, dev: bool) -> None:
 def gui(ctx: click.Context) -> None:
     "Launches the GUI mode"
 
-    gui_available = is_graphical_session(ctx.obj)
-    if gui_available:
-        from systemd_mount_manager.gui import gui_run
-
-        if ctx.obj:
-            click.pause("DEV MODE: Press any key to continue")
-        gui_run(ctx.obj)
-    else:
-        click.echo(
-            "Attention: You selected GUI mode, but SystemD Mount Manager could not detect "
-            "a graphical desktop. The program will fall back to TUI mode."
-        )
-        if click.confirm("Continue? [default yes]", default=True, show_default=True):
-            tui_mode(ctx.obj)
-        else:
-            click.echo("Cancelled")
-            return
+    gui_mode(ctx.obj)
 
 
 @cli.command()
@@ -201,9 +214,16 @@ def stdio() -> None:
     return
 
 
+
+
 def main():
-    cli()
+
+    try:
+        cli()
+    except Exception as e:
+        click.echo(f"ERROR - Unexpected internal error. See logs for details.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    cli()
+    main()

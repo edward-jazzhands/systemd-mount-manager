@@ -268,5 +268,5 @@ class DashBoard(TabPane):
     def compose(self) -> ComposeResult:
         with VerticalScroll(classes="content-container"):
             self.log("Composing DashBoard")
-            yield ManagedMounts(classes="card-container horizontal-scroll")
-            yield DiscoveredMounts(classes="card-container")
+            yield ManagedMounts(classes="card-container hauto horizontal-scroll")
+            yield DiscoveredMounts(classes="card-container hauto")

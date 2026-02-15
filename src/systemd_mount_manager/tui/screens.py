@@ -58,12 +58,11 @@ class HelpScreen(ModalScreen[None]):
         self.dismiss()
 
 
-
-
 class SudoWarningScreenResult(Enum):
     PROCEED = 1
     PROCEED_DONT_SHOW_AGAIN = 2
     CANCEL = 3
+
 
 class SudoWarningScreen(ModalScreen[SudoWarningScreenResult]):
 
@@ -80,8 +79,7 @@ class SudoWarningScreen(ModalScreen[SudoWarningScreenResult]):
         """`operation` is a string describing the operation that requires elevated privileges
         It's only to describe the operation, not used for anything."""
         super().__init__(classes="center-middle")
-        self.operation = operation 
-
+        self.operation = operation
 
     def compose(self) -> ComposeResult:
 
@@ -92,15 +90,19 @@ class SudoWarningScreen(ModalScreen[SudoWarningScreenResult]):
                 "requires elevated privileges. The program will suspend "
                 "back to the terminal and you'll be prompted for your password if it's not "
                 "currently cached by your OS. \n\n"
-                "This uses OS-level sudo caching, your password is never read by this app.\n"
-                , classes="w1fr")
+                "This uses OS-level sudo caching, your password is never read by this app.\n",
+                classes="w1fr hauto",
+            )
             with Horizontal(classes="option-box"):
-                yield Static(
-                    "Don't show this warning again for future privileged operations"
-                )
+                yield Static("Don't show this warning again for future privileged operations")
                 yield Switch(id="dont-show-again")
             # yield Container(classes="hauto")
-            with Horizontal(classes="save-cancel-buttons"):
+            yield Static(
+                "\nIf you can't remember your password, you'll need to press ctrl+c to exit "
+                "and then restart the program.\n",
+                classes="w1fr hauto",
+            )
+            with Horizontal(classes="save-cancel-buttons h3"):
                 yield Container()
                 yield Button("Confirm", id="save-button")
                 yield Button("Cancel", id="cancel-button")
@@ -126,4 +128,3 @@ class SudoWarningScreen(ModalScreen[SudoWarningScreenResult]):
             self.dismiss(SudoWarningScreenResult.PROCEED_DONT_SHOW_AGAIN)
         else:
             self.dismiss(SudoWarningScreenResult.PROCEED)
-

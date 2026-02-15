@@ -14,9 +14,9 @@ This version [Done]:
 - parse only the canonical 6-field entries into structured data
 - preserve everything else as typed variants rather than throwing it away
 
-Next version: 
+Next version:
 - entries are normalized into a domain model (device kinds, mount targets,
-  option algebra) instead of raw strings. 
+  option algebra) instead of raw strings.
 - resolving `UUID=`, `LABEL=`, `/dev/...` into a unified device model?
 - normalizing mount options into structured flags?
 - handling continuation lines?
@@ -123,7 +123,6 @@ def parse_fstab(text: str | None = None) -> list[FstabLine]:
     if text is None:
         text: str = open("/etc/fstab", "r").read()
     lines: list[str] = text.splitlines()
-    
-    parsed_lines = [parse_fstab_line(line, index+1) for index, line in enumerate(lines)]
-    return [line for line in parsed_lines if line is not None]
 
+    parsed_lines = [parse_fstab_line(line, index + 1) for index, line in enumerate(lines)]
+    return [line for line in parsed_lines if line is not None]

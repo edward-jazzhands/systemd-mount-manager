@@ -28,7 +28,6 @@ from typing import Sequence
 import re
 
 
-
 @dataclass(frozen=True)
 class DeviceSpec:
     """Represents the parsed device specification.
@@ -49,20 +48,20 @@ class DeviceSpec:
 
     The DeviceSpec model unifies all these into a normalized (kind, value) tuple
     to enable device comparison and resolution logic downstream.
-    ----------    
+    ----------
     """
 
     kind: str  # e.g., "UUID", "LABEL", "PARTUUID", "PATH"
-    value: str # The ID or path itself
-    raw: str   # The original string
+    value: str  # The ID or path itself
+    raw: str  # The original string
 
     @classmethod
     def from_string(cls, raw: str) -> DeviceSpec:
         """Parses a device string into a structured spec.
-        
+
         Args:
             raw (str): The raw device field (e.g. "UUID=123-456" or "/dev/sda1")
-        
+
         Returns:
             DeviceSpec: The structured device info.
 
@@ -80,7 +79,7 @@ class DeviceSpec:
             # - PARTLABEL=<gpt-partition-label> (GPT partition name)
             kind, value = raw.split("=", 1)
             return cls(kind=kind.upper(), value=value, raw=raw)
-        
+
         # Default to PATH if no equals sign is present
         # This handles:
         # - Traditional /dev/sda1, /dev/nvme0n1p1 paths
@@ -91,11 +90,10 @@ class DeviceSpec:
         return cls(kind="PATH", value=raw, raw=raw)
 
 
-
 @dataclass(frozen=True)
 class MountOptions:
     """Represents parsed mount options (flags vs key-values).
-        
+
     MOUNT OPTIONS MODEL
     ----------
     Mount options control filesystem behavior and can be:
@@ -117,27 +115,31 @@ class MountOptions:
     The MountOptions model separates these into structured sets for validation
     and option conflict detection (e.g., rw vs ro, auto vs noauto).
     """
+
     flags: set[str]
     parameters: dict[str, str]
-    raw: list[str]
+    raw: str  # The original string
 
     @classmethod
-    def from_list(cls, options: list[str]) -> MountOptions:
+    def from_raw(cls, options: str) -> MountOptions:
         """Parses a list of option strings into flags and parameters.
-        
+
         Args:
-            options (list[str]): List of raw option strings (e.g. ["rw", "uid=1000"])
-            
+            options (str): Raw option string (e.g. "rw,noatime,uid=1000")
+
         Returns:
             MountOptions: The structured options object.
 
-        Example: ["rw", "noatime", "uid=1000"] -> 
+        Example: ["rw", "noatime", "uid=1000"] ->
           MountOptions(flags={"rw", "noatime"}, parameters={"uid": "1000"}, ...)
         """
+        # Split comma-separated options into structured flags and parameters
+        options_list: list[str] = options.split(",")
+
         flags: set[str] = set()
         parameters: dict[str, str] = {}
 
-        for opt in options:
+        for opt in options_list:
             if "=" in opt:
                 # Key-value parameters (uid=1000, iocharset=utf8, etc.)
                 key, val = opt.split("=", 1)
@@ -145,7 +147,7 @@ class MountOptions:
             else:
                 # Boolean flags (rw, ro, noexec, nosuid, etc.)
                 flags.add(opt)
-        
+
         return cls(flags=flags, parameters=parameters, raw=options)
 
 
@@ -170,10 +172,11 @@ class MountOptions:
 # server:/export /mnt/nfs nfs soft,intr,rsize=8192,wsize=8192 0 0
 # ===================================================================
 
+
 @dataclass(frozen=True)
 class FstabEntry:
     """Represents a valid fstab entry.
-    
+
     fs_type examples:
     - Local filesystems: ext4, xfs, btrfs, f2fs, jfs, reiserfs
     - FAT filesystems: vfat (FAT32), exfat (for large files)
@@ -194,8 +197,9 @@ class FstabEntry:
     - 0: don't check (for network mounts, tmpfs, swap)
     - 1: check first (root filesystem only)
     - 2: check after root (all other local filesystems)
-    
+
     """
+
     device: DeviceSpec
     mount_point: str
     fs_type: str
@@ -215,15 +219,16 @@ class FstabComment:
 @dataclass(frozen=True)
 class FstabInvalid:
     """Represents an invalid fstab entry.
-    
+
     Invalid entries occur when:
     - Fewer than 6 fields (incomplete entry, user error)
     - dump/pass fields are non-integer (typo, corruption)
     - Malformed device specification (rare, usually still parseable)
-    
-    These are preserved rather than silently dropped to help with error reporting, 
+
+    These are preserved rather than silently dropped to help with error reporting,
     auditing and troubleshooting
     """
+
     reason: str
     raw_line: str
     line_number: int
@@ -243,10 +248,10 @@ def _parse_int(value: str) -> int | None:
 
 def _decode_octal(path: str) -> str:
     """Decodes octal escape sequences in fstab paths (e.g., \\040 -> space).
-    
+
     Args:
         path (str): The raw path string.
-        
+
     Returns:
         str: The path with octal sequences decoded.
 
@@ -268,17 +273,17 @@ def _decode_octal(path: str) -> str:
 
     def repl(match: re.Match) -> str:
         return chr(int(match.group(1), 8))
-    
-    return re.sub(r'\\([0-7]{3})', repl, path)
+
+    return re.sub(r"\\([0-7]{3})", repl, path)
 
 
 def parse_fstab_line(line: str, index: int) -> FstabLine | None:
     """Parse a single fstab line into a FstabLine object
-    
+
     Args:
         line (str): The fstab line to parse
         index (int): The logic line number (accounting for merged lines)
-        
+
     Returns:
         FstabLine: The parsed fstab line
     """
@@ -323,9 +328,7 @@ def parse_fstab_line(line: str, index: int) -> FstabLine | None:
     mount_point = _decode_octal(mount_raw)
 
     # Normalize options
-    # Split comma-separated options into structured flags and parameters
-    options_list: list[str] = options_raw.split(",")
-    mount_options = MountOptions.from_list(options_list)
+    mount_options = MountOptions.from_raw(options_raw)
 
     return FstabEntry(
         device=device_spec,
@@ -342,7 +345,7 @@ def parse_fstab_line(line: str, index: int) -> FstabLine | None:
 def parse_fstab(text: str | None = None) -> list[FstabLine]:
     """Parse /etc/fstab into a list of FstabLine objects. If you don't pass in
     text, it will be read from /etc/fstab.
-    
+
     Note that FstabLine objects are a sum-type of the following:
     - FstabEntry
     - FstabComment
@@ -350,7 +353,7 @@ def parse_fstab(text: str | None = None) -> list[FstabLine]:
 
     Args:
         text (str, optional): The fstab text to parse. Defaults to None.
-        
+
     Returns:
         list[FstabLine]: The parsed fstab lines
     """
@@ -359,9 +362,9 @@ def parse_fstab(text: str | None = None) -> list[FstabLine]:
         # Read from system fstab (/etc/fstab is the canonical location)
         text: str = open("/etc/fstab", "r").read()
     raw_lines: list[str] = text.splitlines()
-    
+
     # Line numbers are 1-indexed (matches text editor convention)
-    parsed_lines = [parse_fstab_line(content, idx+1) for idx, content in enumerate(raw_lines)]
-    
+    parsed_lines = [parse_fstab_line(content, idx + 1) for idx, content in enumerate(raw_lines)]
+
     # Filter out None (empty lines)
     return [line for line in parsed_lines if line is not None]

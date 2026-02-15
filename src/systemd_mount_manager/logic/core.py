@@ -3,61 +3,92 @@ from __future__ import annotations
 import sys
 import os
 import shutil
+from pathlib import Path
 from typing import Sequence  # , NamedTuple
 import subprocess
 import json
-import shlex
-
-# from pathlib import Path
-# from dataclasses import dataclass
-# from enum import StrEnum
-# from textwrap import dedent
-# import errno
-# import configparser
-
+from dataclasses import dataclass
+import errno
+from collections import deque
+# from threading import Lock
 
 # from ezpubsub import Signal, SignalError
 
-
-# Logic Notes
-# Three conceptual layers:
-
-# 1) Pure logic: deterministic transformations, validation, unit generation, parsing,
-#    comparison. No I/O, no state, no privileges.
-#    Pure logic is imported freely by your own code.
-
-# 2) System interaction: filesystem writes, symlinks, sudo, systemctl, journalctl,
-#    discovery probes, network introspection.
-#    Anything that causes side effects, privilege escalation, or persistent system change
-#    goes through the CLI boundary.
-
-# 3) Interfaces: CLI, TUI, GUI.
-#    The CLI becomes the authoritative orchestrator of stateful operations.
+# Program Constants
+SYSTEMD_PATH = Path("/etc/systemd/system/")
+APP_NAME = "systemd-mount-manager"
 
 
-# If skipping the CLI would allow an interface to bypass safety, consistency, or
-# privilege rules, it should go through the CLI.
-
-# If skipping the CLI would only avoid recomputing a pure value, importing
-# the function directly is fine.
+# class UserError(Exception):
+#     """Base class for exceptions in Systemd Mount Manager."""
 
 
-# # Configuration
-# MOUNT_UNIT = r"mnt-truenas\x2dtailnet-brents\x2ddata.mount"
-# AUTOMOUNT_UNIT = r"mnt-truenas\x2dtailnet-brents\x2ddata.automount"
-# # MOUNT_UNIT_ESCAPED = r"mnt-truenas\\x2dtailnet-brents\\x2ddata.mount"
-# # AUTOMOUNT_UNIT_ESCAPED = r"mnt-truenas\\x2dtailnet-brents\\x2ddata.automount"
-# MOUNT_POINT = "/mnt/truenas-tailnet/brents-data"
-# SMB_SERVER = "truenas-scale"
-# SMB_SHARE = "brents-data"
-# CREDS_FILE = "/etc/smb-creds"
+def check_dev_env_var() -> bool:
+    """Check if the dev mode env var is set."""
+    if dev_env := os.environ.get("SMM_DEV_MODE"):
+        if dev_env.lower() in ("1", "true", "yes", "on"):
+            return True
+    return False
+
+    
+@dataclass()
+class ErrorStorage:
+    """Creates a dataclass that serves as in-memory storage for any
+    errors that are caught."""
+
+    error_deque: deque[Exception] 
+    "Internal error deque, max size 1000"
+
+    def add_error(self, e: Exception) -> None:
+        """Add error to interal deque. deque append is thread-safe."""
+
+        self.error_deque.append(e)
+
+    def get_errors(self) -> list[Exception]:
+        """Get all errors as a list."""
+        return list(self.error_deque)
 
 
-# SYSTEMD_PATH: Path = Path("/etc/systemd/system/")
-# HOME: Path = Path.home()
-# SMM_PATH: Path = HOME / ".config" / "systemd-mount-manager"
-# CONFIG_PATH = SMM_PATH / "config.ini"
-# DEFAULT_MOUNTFILES_DIR: Path = SMM_PATH / "managed-mounts"
+error_storage = ErrorStorage(deque(maxlen=1000))
+"""Global error storage object. This object is MUTABLE and contains thread-safe
+methods utilizing a deque and lock."""
+
+
+def os_error_logger(e: OSError, action: str, description: str) -> None:
+    """Add a note to the exception and store it in the error storage.
+
+    Args:
+        e (OSError): The OSError to handle
+        action (str): The action being performed
+        description (str): The description of the file being acted on
+    """
+
+    match e.errno:
+        case errno.ENOENT: # no entry
+            e.add_note(f"Cannot {action} {description}: File not found")
+        case errno.ENOSPC: # no space
+            e.add_note(f"Cannot {action} {description}: No space left on device")
+        case errno.EROFS: # ROFS = read-only filesystem
+            e.add_note(f"Cannot {action} {description}: Read-only filesystem")
+        case errno.ENAMETOOLONG:
+            e.add_note(f"Cannot {action} {description}: Path name too long")
+        case errno.EACCES | errno.EPERM:
+            e.add_note(f"Cannot {action} {description}: Permission denied")
+        case errno.EEXIST:
+            e.add_note(f"Cannot {action} {description}: A file exists at that location")
+        case errno.ENOTDIR: # NOTDIR = not a directory
+            e.add_note(f"Cannot {action} {description}: Invalid parent path (file in path)")
+        case errno.ESTALE:
+            e.add_note(f"Cannot {action} {description}: Network mount is stale or unavailable")
+        case errno.EHOSTUNREACH | errno.EHOSTDOWN | errno.ENETUNREACH | errno.ENETDOWN:
+            e.add_note(f"Cannot {action} {description}: Network or host is unreachable")
+        case errno.EIO:
+            e.add_note(f"Cannot {action} {description}: I/O error (possible network or disk issue)")
+        case _:
+            e.add_note(f"Cannot {action} {description}: Unknown error. See traceback.")
+
+    error_storage.add_error(e)
+
 
 
 # ======================================================= #
@@ -162,23 +193,23 @@ def run_stdio_mode():
 
 def get_editor() -> str:
     """Get the user's preferred editor
-    
+
     Returns:
         str: The full path to the editor
     """
-    editor = os.environ.get('VISUAL') or os.environ.get('EDITOR')
-    
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+
     if editor:
         editor_cmd = editor.split()[0]
         full_path = shutil.which(editor_cmd)
         if full_path:
             # Return full path, replacing just the command part to preserve args
             return editor.replace(editor_cmd, full_path, 1)
-    
+
     return (
-        shutil.which('nano') or
-        shutil.which('nvim') or
-        shutil.which('vim') or
-        shutil.which('vi') or
-        '/usr/bin/vi'  # Absolute fallback
+        shutil.which("nano")
+        or shutil.which("nvim")
+        or shutil.which("vim")
+        or shutil.which("vi")
+        or "/usr/bin/vi"  # Absolute fallback
     )

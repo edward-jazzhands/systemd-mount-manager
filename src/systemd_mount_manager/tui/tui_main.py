@@ -71,7 +71,7 @@ class TextualApp(App[None]):
 
     # def __init__(self) -> None:
     #     super().__init__()
-        # self._is_devtools_connected
+    # self._is_devtools_connected
     # self.app_data = AppData(dev_mode=dev)
     # self.app_data.display = False
 
@@ -113,16 +113,17 @@ class TextualApp(App[None]):
 def tui_run(dev: bool = False) -> None:
     """When `dev` is True, the python process will restart itself using
     the Textual dev-tools package and run this file using Textual dev mode.
-    
+
     ! Dev option requires UV to be installed.
     """
-    
-    if not dev:    
+
+    if not dev:
         app = TextualApp()
         app.run()
         sys.exit(app.return_code)
     else:
         import os
+
         script_path = Path(__file__).resolve()
         full_command = ["uv", "run", "textual", "run", "--dev", f"{script_path}"]
         try:
@@ -130,7 +131,8 @@ def tui_run(dev: bool = False) -> None:
         except OSError as e:
             print(f"ERROR: Failed to execute uv command: {e}", file=sys.stderr)
             sys.exit(1)
-        
+
+
 if __name__ == "__main__":
     # When Textual dev-tools runs this file, it'll run tui_run() again with
     # dev bool set to False - but this main guard down here would only be run

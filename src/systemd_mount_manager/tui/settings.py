@@ -36,11 +36,6 @@ import textual_fspicker.parts
 # Local imports
 import systemd_mount_manager.logic as logic
 
-# [ ]: Add validation for input fields
-# [ ]: managed-mounts-dir actually changes dir
-# [ ]: Directory picker
-# [ ]: Extra options modal when changing maaged-mounts-dir
-
 
 class ValidPath(Validator):
     def validate(self, value: str) -> ValidationResult:
@@ -56,16 +51,15 @@ class ValidPath(Validator):
             return self.failure("Invalid path: contains non-printable characters")
 
         try:
-            path = Path(value).expanduser()
+            path = Path(value).resolve()
         except Exception as e:
             return self.failure(f"Invalid path: {e}")
 
         if not path.is_absolute():
             return self.failure("Invalid path: not absolute")
 
-        log(f"Valid path: {path.as_posix()}")
+        log(f"Valid path resolved: {path.resolve().as_posix}")
         return self.success()
-
 
 
 class MountsDirScreenResult(Enum):
@@ -94,24 +88,19 @@ class ChangeManagedMountsDirScreen(ModalScreen[MountsDirScreenResult]):
         self.current_dir_path = current_dir_path
 
     def compose(self) -> ComposeResult:
-        # We need to know:
-        #   Does the new dir already exist? Should it be created?
-        #   Does the user want to copy their existing mounts to the new dir?
-        # We need to do:
-        #   Create additional warning if user chooses not to migrate mounts
 
         with VerticalScroll(classes="help-container hauto"):
             yield Static("Change managed mounts directory", classes="inline-header")
             yield Static("\nCurrent:", classes="w1fr h2")
             yield TextArea(
-                f"{self.current_dir_path.as_posix()}",
+                f"{self.current_dir_path}",
                 compact=True,
                 soft_wrap=False,
                 read_only=True,
             )
             yield Static("\nNew:", classes="w1fr h2")
             yield TextArea(
-                f"{self.new_dir_path.as_posix()}",
+                f"{self.new_dir_path}",
                 compact=True,
                 soft_wrap=False,
                 read_only=True,
@@ -135,7 +124,7 @@ class ChangeManagedMountsDirScreen(ModalScreen[MountsDirScreenResult]):
                 "This will not delete or modify anything in the current directory.",
                 classes="w1fr h2",
             )
-            with Horizontal(classes="save-cancel-buttons"):
+            with Horizontal(classes="save-cancel-buttons h3"):
                 yield Container()
                 yield Button("Confirm", id="save-button")
                 yield Button("Cancel", id="cancel-button")
@@ -164,7 +153,6 @@ class ChangeManagedMountsDirScreen(ModalScreen[MountsDirScreenResult]):
 
 class CustomFSPicker(fspicker.SelectDirectory):
 
-
     def on_mount(self) -> None:
         """Configure the dialog once the DOM is ready."""
         navigation = self.query_one(fspicker.parts.DirectoryNavigation)
@@ -172,60 +160,65 @@ class CustomFSPicker(fspicker.SelectDirectory):
         navigation.show_hidden = True
         self.query_one(fspicker.parts.CurrentDirectory).current_directory = navigation.location
 
+
 class SettingsTab(TabPane):
 
     _validate_on: list[InputValidationOn] = ["submitted", "blur"]
 
     def compose(self) -> ComposeResult:
         with ScrollableContainer(classes="content-container"):
-            with Container(id="settings-container", classes="card-container center-middle"):
+            with Container(id="settings-container", classes="card-container hauto center-middle"):
 
                 with Container(classes="setting-option hauto"):
                     # with Horizontal(classes="setting-option-header"):
                     yield Static(
                         "Directory to store managed mounts \nChanging this"
-                        " will prompt for options before committing changes.", classes="setting-description"
+                        " will prompt for options before committing changes.",
+                        classes="setting-description",
                     )
                     with Horizontal(classes="hauto margin-1-0"):
-                        yield Static(
-                            "Open directory picker", classes="compact-static"
-                        )
+                        yield Static("Open directory picker", classes="compact-static")
                         yield Button("Choose", id="fspicker-button", compact=True)
                         yield Container(classes="h1")
-                    # CHANGE THIS: must pull from config
+
                     yield Input(
-                        "~/.config/systemd-mount-manager/managed-mounts",
                         id="managed-mounts-dir",
                         validators=ValidPath(),
-                        validate_on=SettingsTab._validate_on
+                        validate_on=SettingsTab._validate_on,
                     )
+                    with Horizontal(classes="save-cancel-buttons h1"):
+                        yield Container()
+                        yield Button("Save Changes", id="save-dir-button", compact=True)
+                        yield Button("Revert", id="revert-dir-button", compact=True)
 
                 with Horizontal(classes="setting-option hauto"):
                     yield Static(
                         "Show warning before performing privileged operations. \n"
                         "This does not affect whether you'll be prompted for your password "
                         "by your OS. The password is never read by this app.",
-                        classes="setting-description"
+                        classes="setting-description",
                     )
                     # yield Container()
-                    yield Switch(id="show-sudo-warning-switch")
+                    yield Switch(id="sudo-warning-switch")
 
                 with Horizontal(classes="setting-option h3"):
 
                     yield Container()
                     yield Button("Test button", id="test-button")
 
-                with Horizontal(classes="save-cancel-buttons"):
-                    yield Container()
-                    yield Button("Save Changes", id="save-button")
-                    yield Button("Revert", id="cancel-button")
-
-    # def on_mount(self) -> None:
-    #     self.load_settings()
+    def on_mount(self) -> None:
+        self.load_settings()
 
     def load_settings(self) -> None:
-        settings_payload = logic.config.load_settings()
-        self.query_one("#managed-mounts-dir", Input).value = settings_payload.managed_mounts_dir
+        conf_data = logic.config.read_config()
+        if conf_data.managed_mounts_dir:
+            self.query_one("#managed-mounts-dir", Input).value = conf_data.managed_mounts_dir
+        else:
+            self.log.error("Warning: managed mounts dir could not be read from config file")
+        if conf_data.show_sudo_warning:
+            self.query_one("#sudo-warning-switch", Switch).value = conf_data.show_sudo_warning
+        else:
+            self.log.error("Warning: show sudo warning could not be read from config file")
 
     @on(Button.Pressed, "#fspicker-button")
     @work(exit_on_error=False)
@@ -236,9 +229,10 @@ class SettingsTab(TabPane):
         if result:
             self.query_one("#managed-mounts-dir", Input).value = result.as_posix()
 
-    @on(Switch.Changed, "#show-sudo-warning-switch")
+    @on(Switch.Changed, "#sudo-warning-switch")
     def switch_changed(self, event: Switch.Changed) -> None:
-        self.notify(f"Switch {event.switch.id} changed to {event.value}")
+        self.log(f"Switch {event.switch.id} changed to {event.value}")
+        logic.config.config.set("DEFAULT", "show_sudo_warning", str(event.value))
 
     # @on(Input.Blurred, "#managed-mounts-dir")
     @on(Input.Submitted, "#managed-mounts-dir")
@@ -248,34 +242,29 @@ class SettingsTab(TabPane):
             for failure in event.validation_result.failure_descriptions:
                 self.notify(failure)
 
-    @on(Button.Pressed, "#save-button")
+    @on(Button.Pressed, "#save-dir-button")
     @work(group="save-settings", exclusive=True, exit_on_error=True)
     async def save_button_pressed(self, event: Button.Pressed) -> None:
 
-        something_changed = False
-        # migrate = False
+        dir_input_widget = self.query_one("#managed-mounts-dir", Input)
+        new_dir_str = dir_input_widget.value
 
-        # Gather references to all the settings widgets
-        managed_mounts_dir_input = self.query_one("#managed-mounts-dir", Input)
+        # Normalize extracted value
+        new_dir_path = Path(new_dir_str).resolve()
 
-        # Extract values from settings widgets
-        new_dir_input = managed_mounts_dir_input.value
-
-        # Normalize extracted values
-        new_dir_path = Path(new_dir_input).expanduser()
-        new_dir_as_posix = new_dir_path.as_posix()
-
-        # Validate input fields
-        validation_result = managed_mounts_dir_input.validate(new_dir_as_posix)
+        # Validate input field
+        validation_result = dir_input_widget.validate(new_dir_path)
         assert validation_result is not None  # logically can't be None if validators are set
         if not validation_result.is_valid:
             for failure in validation_result.failure_descriptions:
                 self.notify(failure)
             return
 
-        # Compare old values with new values
-        if new_dir_as_posix != logic.config.config["DEFAULT"]["managed_mounts_dir"]:
-            current_dir_path = Path(logic.config.config["DEFAULT"]["managed_mounts_dir"])
+        # Compare old value with new value
+        current_dir = logic.config.config["DEFAULT"]["managed_mounts_dir"]
+        current_dir_path = Path(current_dir)
+        if current_dir != new_dir_str:
+
             result = await self.app.push_screen_wait(
                 ChangeManagedMountsDirScreen(new_dir_path, current_dir_path)
             )
