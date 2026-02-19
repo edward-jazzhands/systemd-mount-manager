@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 from cgi import FieldStorage
 from click import pass_context
 import sys
@@ -42,6 +43,8 @@ def debug_msg(msg: str, debug: bool) -> None:
 
 
 def is_graphical_session(dev: bool) -> bool:
+    """This is run only by the gui_mode function, to determine if its possible
+    for the GUI mode to be used."""
 
     # Primary check (most reliable on modern systems)
     if os.environ.get("XDG_SESSION_TYPE") in ("x11", "wayland"):
@@ -116,35 +119,36 @@ def check_systemd(dev: bool) -> bool:
         return False
 
 
-def gui_mode(ctx: click.Context) -> None:
+def gui_mode(context: logic.core.StartupResult) -> None:
 
-    gui_available = is_graphical_session(ctx.obj)
+    gui_available = is_graphical_session(context.dev)
     if gui_available:
         from systemd_mount_manager.gui import gui_run
 
-        if ctx.obj["DEV_MODE"]:
+        if context.dev:
             click.pause("DEV MODE: Press any key to continue")
-        gui_run(ctx.obj["DEV_MODE"])
+        gui_run(context)
     else:
         click.echo(
             "Attention: You selected GUI mode, but systemd Mount Manager could not detect "
             "a graphical desktop. The program will fall back to TUI mode."
         )
         if click.confirm("Continue? [default yes]", default=True, show_default=True):
-            tui_mode(ctx.obj)
+            tui_mode(context)
         else:
             click.echo("Cancelled")
             return
 
 
-def tui_mode(ctx: click.Context) -> None:
+def tui_mode(context: logic.core.StartupResult) -> None:
 
     # lazy loading
     from systemd_mount_manager.tui import tui_run
 
-    if ctx.obj["DEV_MODE"]:
+    if context.dev:
+        click.echo(f"Number of errors: {len(logic.core.error_storage)}")
         click.pause("DEV MODE: Press any key to continue")
-    tui_run(ctx.obj["DEV_MODE"])
+    tui_run(context)
 
 
 # @click.group() creates a command group that can contain subcommands
@@ -165,7 +169,6 @@ def cli(ctx: click.Context) -> None:
     Note that systemd is required in order for the program to start."""
 
     dev = logic.core.check_dev_env_var()
-    ctx.obj["DEV_MODE"] = dev
 
     sysd_check = check_systemd(dev)
     if sysd_check is False:
@@ -175,34 +178,60 @@ def cli(ctx: click.Context) -> None:
             click.echo("Running anyway because dev mode is active...")
 
     # Initialization
+    if startup_logging_result := logic.log_setup.startup_logging():
+        # This will return True if the file handler was initialized successfully,
+        # OR if the program is running in dev mode (we have the dev console)
+        debug_msg("Logging startup successful", dev)
+    else:
+        # This will return False if the file handler failed to initialize, AND
+        # the program is NOT running in dev mode.
+        debug_msg("Logging startup failed", dev)
+        # We can continue but we will want to alert the user when the program starts.
 
-    if logic.config.config_startup():
+    if startup_config_result := logic.config.startup_config():
+        # True means either we successfully created a new config file, or we
+        # were able to read an existing config file.
         debug_msg("Config startup successful", dev)
     else:
-        click.echo(
-            f"{Color.RED}Attention:{Color.NC} A configuration error has prevented "
-            "the program from starting. Up to the last 5 errors are shown below."
-        )
-        errors = logic.core.error_storage.get_errors()
-        for e in errors[-5:]:
-            click.echo(str(e))
+        # False means we couldn't create a new config file, or we couldn't read
+        # an existing one. The program will fall back to the default config.
+        debug_msg("Config startup failed", dev)
+        # We can continue but we will want to alert the user
 
+        # click.echo(
+        #     f"{Color.RED}Attention:{Color.NC} A configuration error has prevented "
+        #     "the program from starting. Up to the last 5 errors are shown below."
+        # )
+        # errors = list(logic.core.error_storage.pop_errors())
+        # for e in errors[-5:]:
+        #     click.echo(str(e))
+
+    startup_results = logic.core.StartupResult(
+        logging=startup_logging_result,
+        config=startup_config_result,
+        dev=dev,
+    )
+    ctx.obj = startup_results
+
+    # Once we've confirmed the config startup has been attempted,
+    # we can swap out the memory handler for the file handler.
+    swap_result = logic.log_setup.swap_memory_handler_with_file_handler()
 
 
 @cli.command()
-@click.pass_context
-def gui(ctx: click.Context) -> None:
+@click.pass_obj
+def gui(obj: logic.core.StartupResult) -> None:
     "Launches the GUI mode"
 
-    gui_mode(ctx.obj)
+    gui_mode(obj)
 
 
 @cli.command()
-@click.pass_context
-def tui(ctx: click.Context) -> None:
+@click.pass_obj
+def tui(obj: logic.core.StartupResult) -> None:
     "Launches the TUI mode"
 
-    tui_mode(ctx.obj)
+    tui_mode(obj)
 
 
 @cli.command()
@@ -214,15 +243,18 @@ def stdio() -> None:
     return
 
 
-
-
 def main():
 
     try:
         cli()
     except Exception as e:
-        click.echo(f"ERROR - Unexpected internal error. See logs for details.")
-        sys.exit(1)
+
+        if dev_mode_env := os.environ.get("SMM_DEV_MODE"):
+            if dev_mode_env.lower() in ("1", "true", "yes", "on"):
+                raise e
+        else:
+            click.echo(f"ERROR - Unexpected internal error. See logs for details.")
+            sys.exit(1)
 
 
 if __name__ == "__main__":

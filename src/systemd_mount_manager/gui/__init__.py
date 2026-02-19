@@ -2,13 +2,17 @@ from __future__ import annotations
 import sys
 import click
 
+from systemd_mount_manager.logic import core
 
 def debug_msg(msg: str, debug: bool = False) -> None:
     if debug:
         click.echo(msg, err=True)
 
 
-def gui_run(debug: bool) -> None:
+def gui_run(context: core.StartupResult) -> None:
+
+    dev = context.dev
+    
     # if sys.base_prefix != sys.prefix:  # We're in a venv
     # NOTE: I believe the above check is not logically necessary
     # We can just do the safe check for `gi` regardless of whether we're
@@ -23,14 +27,14 @@ def gui_run(debug: bool) -> None:
     try:
         import gi  # noqa: E402
     except (ValueError, ImportError):
-        debug_msg("Warning: PyGObject not found. Did you use --system-site-packages?", debug)
+        debug_msg("Warning: PyGObject not found. Did you use --system-site-packages?", dev)
         sys.exit(1)
 
     try:
         gi.require_version("Gtk", "4.0")  # or '3.0' depending on target
         from gi.repository import Gtk
     except (ValueError, ImportError) as e:
-        debug_msg(f"ERROR: GTK not available: {e}", debug)
+        debug_msg(f"ERROR: GTK not available: {e}", dev)
         sys.exit(1)
 
-    debug_msg("GTK and Pygobject were both imported successfully.", debug)
+    debug_msg("GTK and Pygobject were both imported successfully.", dev)

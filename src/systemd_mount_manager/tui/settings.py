@@ -31,10 +31,11 @@ from textual.containers import (
 from textual.binding import Binding
 from textual.screen import ModalScreen
 import textual_fspicker as fspicker
-import textual_fspicker.parts
+import textual_fspicker.parts as fspicker_parts
 
 # Local imports
 import systemd_mount_manager.logic as logic
+from systemd_mount_manager.logic.log_setup import logger
 
 
 class ValidPath(Validator):
@@ -155,10 +156,10 @@ class CustomFSPicker(fspicker.SelectDirectory):
 
     def on_mount(self) -> None:
         """Configure the dialog once the DOM is ready."""
-        navigation = self.query_one(fspicker.parts.DirectoryNavigation)
+        navigation = self.query_one(fspicker_parts.DirectoryNavigation)
         navigation.show_files = False
         navigation.show_hidden = True
-        self.query_one(fspicker.parts.CurrentDirectory).current_directory = navigation.location
+        self.query_one(fspicker_parts.CurrentDirectory).current_directory = navigation.location
 
 
 class SettingsTab(TabPane):
@@ -210,15 +211,17 @@ class SettingsTab(TabPane):
         self.load_settings()
 
     def load_settings(self) -> None:
-        conf_data = logic.config.read_config()
-        if conf_data.managed_mounts_dir:
-            self.query_one("#managed-mounts-dir", Input).value = conf_data.managed_mounts_dir
-        else:
-            self.log.error("Warning: managed mounts dir could not be read from config file")
-        if conf_data.show_sudo_warning:
-            self.query_one("#sudo-warning-switch", Switch).value = conf_data.show_sudo_warning
-        else:
-            self.log.error("Warning: show sudo warning could not be read from config file")
+        pass
+        # conf_data = logic.config.read_config()
+
+        # if conf_data.managed_mounts_dir:
+        #     self.query_one("#managed-mounts-dir", Input).value = conf_data.managed_mounts_dir
+        # else:
+        #     logger.debug("Warning: managed mounts dir could not be read from config file")
+        # if conf_data.show_sudo_warning:
+        #     self.query_one("#sudo-warning-switch", Switch).value = conf_data.show_sudo_warning
+        # else:
+        #     logger.debug("Warning: show sudo warning could not be read from config file")
 
     @on(Button.Pressed, "#fspicker-button")
     @work(exit_on_error=False)
@@ -231,8 +234,8 @@ class SettingsTab(TabPane):
 
     @on(Switch.Changed, "#sudo-warning-switch")
     def switch_changed(self, event: Switch.Changed) -> None:
-        self.log(f"Switch {event.switch.id} changed to {event.value}")
-        logic.config.config.set("DEFAULT", "show_sudo_warning", str(event.value))
+        logger.debug(f"Switch {event.switch.id} changed to {event.value}")
+        # logic.config.config.set("DEFAULT", "show_sudo_warning", str(event.value))
 
     # @on(Input.Blurred, "#managed-mounts-dir")
     @on(Input.Submitted, "#managed-mounts-dir")
@@ -249,11 +252,13 @@ class SettingsTab(TabPane):
         dir_input_widget = self.query_one("#managed-mounts-dir", Input)
         new_dir_str = dir_input_widget.value
 
+        something_changed = False
+
         # Normalize extracted value
         new_dir_path = Path(new_dir_str).resolve()
 
         # Validate input field
-        validation_result = dir_input_widget.validate(new_dir_path)
+        validation_result = dir_input_widget.validate(str(new_dir_path))
         assert validation_result is not None  # logically can't be None if validators are set
         if not validation_result.is_valid:
             for failure in validation_result.failure_descriptions:
@@ -261,7 +266,9 @@ class SettingsTab(TabPane):
             return
 
         # Compare old value with new value
-        current_dir = logic.config.config["DEFAULT"]["managed_mounts_dir"]
+        # current_dir = logic.config.config["DEFAULT"]["managed_mounts_dir"]
+        #! TEMPORARY
+        current_dir = logic.config.default_config.managed_mounts_dir
         current_dir_path = Path(current_dir)
         if current_dir != new_dir_str:
 
@@ -271,19 +278,19 @@ class SettingsTab(TabPane):
             if result == MountsDirScreenResult.CANCEL:
                 return
             migrate = result == MountsDirScreenResult.PROCEED_WITH_MIGRATE
-            try:
-                logic.config.change_managed_mounts_dir(new_dir_as_posix, migrate=migrate)
-            except (ValueError, OSError) as e:
-                self.log(f"Error: {e}")
-                self.notify(f"Error: {e}")
-                return
+            # try:
+            #     logic.config.change_managed_mounts_dir(new_dir_as_posix, migrate=migrate)
+            # except (ValueError, OSError) as e:
+            #     logger.debug(f"Error: {e}")
+            #     self.notify(f"Error: {e}")
+            #     return
             something_changed = True
 
         if something_changed:
-            self.log("Settings saved")
+            logger.debug("Settings saved")
             self.notify("Settings saved")
         else:
-            self.log("No settings changed, nothing to save.")
+            logger.debug("No settings changed, nothing to save.")
             self.notify("No settings changed, nothing to save.")
 
     @on(Button.Pressed, "#cancel-button")

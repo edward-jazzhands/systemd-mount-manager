@@ -49,7 +49,7 @@ class HelpScreen(ModalScreen[None]):
         if self.anchor_line:
             found = self.query_one(Markdown).goto_anchor(self.anchor_line)
             if not found:
-                self.log.error(f"Anchor '{self.anchor_line}' not found in help document.")
+                logger.debug(f"Anchor '{self.anchor_line}' not found in help document.")
 
     def on_click(self) -> None:
         self.dismiss()

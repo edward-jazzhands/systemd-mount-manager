@@ -23,7 +23,7 @@ from rich.text import Text
 
 # Local imports
 import systemd_mount_manager.logic as logic
-
+from systemd_mount_manager.logic.log_setup import logger
 
 class ShareStatus(Enum):
     CONNECTED = 1
@@ -113,12 +113,12 @@ class ManagedMounts(Container):
 
     def compose(self) -> ComposeResult:
         self.mounts_list = []
-        self.log("Composing ManagedMounts")
+        logger.debug("Composing ManagedMounts")
         yield ManagedMountHeader(classes="h3")
         yield Container(id="managed-mounts-container")
 
     async def on_mount(self):
-        self.log("Mounted ManagedMounts")
+        logger.debug("Mounted ManagedMounts")
 
         worker = self.load_managed_mounts()
         self.mounts_list = await worker.wait()
@@ -131,7 +131,7 @@ class ManagedMounts(Container):
         Returns a list of ManagedMountData objects. This list is not connected to
         whether the UI was updated successfully."""
 
-        self.log("Loading managed mounts")
+        logger.debug("Loading managed mounts")
         mounts_container = self.query_one("#managed-mounts-container", Container)
         managed_mounts = logic.mounts.list_managed_mounts_data()
         for mount_entry_data in managed_mounts:
@@ -218,7 +218,7 @@ class DiscoveredMounts(Container):
 
     @on(Button.Pressed, "#non-system-mounts-button")
     def show_nonsystem_mounts(self) -> None:
-        self.log("Showing non-system mounts")
+        logger.debug("Showing non-system mounts")
         self.table_mode = DiscoveredMounts.TableMode.NONSYSTEM
         first_filter = [
             mount
@@ -236,7 +236,7 @@ class DiscoveredMounts(Container):
 
     @on(Button.Pressed, "#system-mounts-button")
     def show_system_mounts(self) -> None:
-        self.log("Showing system mounts")
+        logger.debug("Showing system mounts")
         self.table_mode = DiscoveredMounts.TableMode.SYSTEM
         self.query_one(ContentSwitcher).current = "discovered-mounts-table"
         self.table.clear()
@@ -250,7 +250,7 @@ class DiscoveredMounts(Container):
 
     @on(Button.Pressed, "#all-mounts-button")
     def show_all_mounts(self) -> None:
-        self.log("Showing all mounts")
+        logger.debug("Showing all mounts")
         self.table_mode = DiscoveredMounts.TableMode.ALL
         self.query_one(ContentSwitcher).current = "discovered-mounts-table"
         self.table.clear()
@@ -267,6 +267,6 @@ class DiscoveredMounts(Container):
 class DashBoard(TabPane):
     def compose(self) -> ComposeResult:
         with VerticalScroll(classes="content-container"):
-            self.log("Composing DashBoard")
+            logger.debug("Composing DashBoard")
             yield ManagedMounts(classes="card-container hauto horizontal-scroll")
             yield DiscoveredMounts(classes="card-container hauto")

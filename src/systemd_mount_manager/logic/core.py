@@ -1,5 +1,9 @@
 # python standard lib
 from __future__ import annotations
+from typing import TYPE_CHECKING, TypedDict
+if TYPE_CHECKING:
+    import logging
+import copy
 import sys
 import os
 import shutil
@@ -7,10 +11,10 @@ from pathlib import Path
 from typing import Sequence  # , NamedTuple
 import subprocess
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import errno
-from collections import deque
-# from threading import Lock
+import queue
+from threading import Lock
 
 # from ezpubsub import Signal, SignalError
 
@@ -23,6 +27,15 @@ APP_NAME = "systemd-mount-manager"
 #     """Base class for exceptions in Systemd Mount Manager."""
 
 
+@dataclass()
+class StartupResult:
+    """TypedDict for startup results"""
+
+    logging: bool
+    config: bool
+    dev: bool
+
+
 def check_dev_env_var() -> bool:
     """Check if the dev mode env var is set."""
     if dev_env := os.environ.get("SMM_DEV_MODE"):
@@ -30,28 +43,58 @@ def check_dev_env_var() -> bool:
             return True
     return False
 
-    
+
 @dataclass()
 class ErrorStorage:
     """Creates a dataclass that serves as in-memory storage for any
-    errors that are caught."""
+    errors that are caught.
 
-    error_deque: deque[Exception] 
-    "Internal error deque, max size 1000"
+    Args:
+        maxsize (int, optional): The max size of the error queue. Defaults to 1000.
+    """
+
+    error_list: list[Exception] = field(default_factory=list)
+    "Internal error list"
+
+    logger: logging.Logger | None = None
+    """ErrorStorage keeps a reference to the desired logger. Add using the
+    add_logger method."""
+
+    lock: Lock = field(init=False, default_factory=Lock)
 
     def add_error(self, e: Exception) -> None:
-        """Add error to interal deque. deque append is thread-safe."""
+        """Add error. Thread-safe."""
+        with self.lock:
+            self.error_list.append(e)
 
-        self.error_deque.append(e)
+        # During startup, this might receive errors from the log_setup module.
+        # If that happens then we can't just send it to the logger, its not ready yet.
+        if self.logger:
+            self.logger.error(str(e))
 
-    def get_errors(self) -> list[Exception]:
-        """Get all errors as a list."""
-        return list(self.error_deque)
+    def get_list_copy(self) -> list[Exception]:
+        """Return a copy of the error list"""
+        with self.lock:
+            return copy.deepcopy(self.error_list)
+
+    def add_logger(self, logger: logging.Logger) -> None:
+        """Add a logger to the error storage. Errors will be passed to this logger."""
+        self.logger = logger
+
+    @property
+    def length(self) -> int:
+        """Return the length of the error list"""
+        with self.lock:
+            return len(self.error_list)
+
+    def __len__(self) -> int:
+        """Return the length of the error list"""
+        return self.length
 
 
-error_storage = ErrorStorage(deque(maxlen=1000))
-"""Global error storage object. This object is MUTABLE and contains thread-safe
-methods utilizing a deque and lock."""
+error_storage = ErrorStorage()
+"""Global error storage object. This object is mutable, but contains thread-safe
+methods utilizing a Lock."""
 
 
 def os_error_logger(e: OSError, action: str, description: str) -> None:
@@ -64,11 +107,11 @@ def os_error_logger(e: OSError, action: str, description: str) -> None:
     """
 
     match e.errno:
-        case errno.ENOENT: # no entry
+        case errno.ENOENT:  # no entry
             e.add_note(f"Cannot {action} {description}: File not found")
-        case errno.ENOSPC: # no space
+        case errno.ENOSPC:  # no space
             e.add_note(f"Cannot {action} {description}: No space left on device")
-        case errno.EROFS: # ROFS = read-only filesystem
+        case errno.EROFS:  # ROFS = read-only filesystem
             e.add_note(f"Cannot {action} {description}: Read-only filesystem")
         case errno.ENAMETOOLONG:
             e.add_note(f"Cannot {action} {description}: Path name too long")
@@ -76,7 +119,7 @@ def os_error_logger(e: OSError, action: str, description: str) -> None:
             e.add_note(f"Cannot {action} {description}: Permission denied")
         case errno.EEXIST:
             e.add_note(f"Cannot {action} {description}: A file exists at that location")
-        case errno.ENOTDIR: # NOTDIR = not a directory
+        case errno.ENOTDIR:  # NOTDIR = not a directory
             e.add_note(f"Cannot {action} {description}: Invalid parent path (file in path)")
         case errno.ESTALE:
             e.add_note(f"Cannot {action} {description}: Network mount is stale or unavailable")
@@ -89,6 +132,56 @@ def os_error_logger(e: OSError, action: str, description: str) -> None:
 
     error_storage.add_error(e)
 
+
+
+# @dataclass()
+# class StartupResultStorage:
+#     """ """
+
+#     results: dict[str, bool] = field(init=False, default_factory=dict)
+#     lock: Lock = field(init=False, default_factory=Lock)
+
+#     def add_result(self, result: str, value: bool) -> None:
+#         """Add a result to the storage"""
+#         with self.lock:
+#             self.results[result] = value
+
+#     def get_result(self, result: str) -> bool:
+#         """Get a result from the storage"""
+#         with self.lock:
+#             return self.results[result]
+
+# startup_result_storage = StartupResultStorage()
+# """Global startup result storage object. This object is mutable, but contains thread-safe
+# methods utilizing a Lock."""
+
+
+# === ABOUT PYDANTIC ERRORS === #
+
+# Pydantic contains this nifty `errors()` method that returns a list of errors
+# that were encountered during validation. Note that this is a list of
+# `ErrorDetails` objects, which are a dict with the following keys:
+
+# - `type`: The type of error that occurred, this is an identifier designed for
+#   programmatic use that will change rarely or never.
+# - `loc`: Tuple of (str, int) identifying where in the schema the error occurred.
+#   the str is the name of the field (the key), and the int is {???}
+# - `msg`: A human readable error message.
+# - `input`: The input data at this `loc` that caused the error.
+# - `ctx`: Values which are required to render the error message, and could hence be useful in
+#   rendering custom error messages. Also useful for passing custom error data forward.
+# - `url`: The documentation URL giving information about the error. No URL is available if
+#   a [`PydanticCustomError`][pydantic_core.PydanticCustomError] is used.
+
+# ABOUT 'loc'
+
+# The loc tuple represents the path to the field that failed validation, tracing through
+# your nested data structure from the root down to the exact problem location. Each
+# element in the tuple is one step deeper into the nesting. For simple fields, it's just
+# the field name like ('username',). For nested models, it shows the path through field
+# names like ('username', 'address', 'zip_code'). When validating sequences like lists,
+# an integer  index appears in the path to indicate which element failed, like
+# ('items', 2, 'price') for an error in the third item's price field.
 
 
 # ======================================================= #

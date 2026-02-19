@@ -192,7 +192,8 @@ def list_managed_mounts() -> list[Path]:
     """Scans the managed mounts directory and returns a list of Path objects
     representing .mount and .automount files"""
 
-    dir_path = Path(logic.config.config["DEFAULT"]["managed_mounts_dir"])
+    # dir_path = Path(logic.config.config["DEFAULT"]["managed_mounts_dir"])
+    dir_path = DEFAULT_MOUNTFILES_DIR
     mount_files = list(dir_path.glob("*.mount"))
     automount_files = list(dir_path.glob("*.automount"))
     return mount_files + automount_files

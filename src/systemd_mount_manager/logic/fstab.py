@@ -360,8 +360,11 @@ def parse_fstab(text: str | None = None) -> list[FstabLine]:
 
     if text is None:
         # Read from system fstab (/etc/fstab is the canonical location)
-        text: str = open("/etc/fstab", "r").read()
-    raw_lines: list[str] = text.splitlines()
+        fstab_str: str = open("/etc/fstab", "r").read()
+        raw_lines: list[str] = fstab_str.splitlines()
+    else:
+        # convert text into lines
+        raw_lines: list[str] = text.splitlines()
 
     # Line numbers are 1-indexed (matches text editor convention)
     parsed_lines = [parse_fstab_line(content, idx + 1) for idx, content in enumerate(raw_lines)]

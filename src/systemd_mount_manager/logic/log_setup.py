@@ -1,254 +1,254 @@
-"""
-Logging configuration setup with XDG support and QueueHandler/QueueListener.
-
-This module handles loading logging configuration from a .ini file using fileConfig,
-with proper XDG directory support and a queue-based handler system for thread-safe
-async logging.
-"""
-
-# Standard lib imports
-from pathlib import Path
-from typing import Any
+# standard lib
 import logging
-import logging.config
-import logging.handlers
+import logging.handlers as handlers
 import queue
 import atexit
-import os
+from dataclasses import dataclass
 
-# Third party
-from textual import log as textual_log
+# import time
+# from threading import Thread
 
-# Local imports
-import systemd_mount_manager.logic.config as config_module
+# third party
+from textual.logging import TextualHandler
 
+# local imports
+import systemd_mount_manager.logic.core as core
+import systemd_mount_manager.logic.config as config
 
-# Configuration constants
-# =======================
-APP_NAME = "systemd-mount-manager"
-CONFIG_FILENAME = "logging-config.ini"
+APP_NAME = core.APP_NAME
 
-# XDG fallback for when XDG_CONFIG_HOME is not set
-DEFAULT_CONFIG_DIR = Path.home() / ".config"
-
-DEFAULT_LOGGING_CONFIG_YAML = """\
-# Logging configuration
-logging:
-  version: 1
-  disable_existing_loggers: false
-  
-  formatters:
-    detailed:
-      format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-      datefmt: "%Y-%m-%d %H:%M:%S"
-    simple:
-      format: "%(levelname)s - %(message)s"
-  
-  handlers:
-    queue:
-      class: logging.handlers.QueueHandler
-    console:
-      class: logging.StreamHandler
-      formatter: simple
-      stream: ext://sys.stdout
-  
-  root:
-    level: INFO
-    handlers: [queue]
-"""
-
-#! Not sure if this is needed
-# class TextualLogWriter:
-#     "A class to write a bunch of strings to a buffer and then run the send method."
-
-#     def __init__(self) -> None:
-#         self.buffer: list[str] = []
-
-#     def send(self) -> None:
-#         "write collected messages to terminal"
-
-#         log_string = "".join(self.buffer)
-#         log(log_string.rstrip("\n"))
-#         self.buffer = []
-
-#     def append(self, message: str) -> None:
-#         self.buffer.append(message)
+#! we need to set up a flag somewhere that we can use to know
+# the result of the config startup
 
 
-# # The Log Writer instance
-# textual_log_writer = TextualLogWriter()
-# "Write a bunch of strings to a buffer and then run the send method"
+# This module is loaded before the config startup function is called, because
+# we want logging to be able to keep track of config errors.
+# So the config storage will only have the default config loaded at this point.
+
+# Note that the user's logs directory might change after the program starts. But
+# until we have parsed and confirmed that, we have to use the default directory
+# (or the XDG_STATE_HOME env var if the user has it set).
+# The program will avoid writing any log files until it has attempted to read
+# the config file. If it tries and fails to get a valid entry for the logs dir,
+# then it will fall back to the default dir, and write the log buffer to a file.
+
+# == Priority ==
+# 1. User config file
+# 2. XDG_STATE_HOME env var
+# 3. ~/.local/state
 
 
+class CustomMemoryHandler(handlers.MemoryHandler):
 
-def create_default_logging_config(config_path: Path) -> None:
-    """
-    Create a default logging configuration file with QueueHandler setup.
+    def __init__(self, target: logging.Handler):
+        super().__init__(capacity=10, flushLevel=logging.ERROR, target=target, flushOnClose=True)
 
-    This creates a config that uses QueueHandler as the primary handler,
-    which will be swapped for real handlers via QueueListener.
+        # NOTE: If the target is None, it will never flush the buffer.
+        # The buffer is just a list, but it could end up making the list
+        # grow very large, and that might not be great for performance.
 
-    Args:
-        config_path: Path where config file should be written
-    """
+    def shouldFlush(self, record: logging.LogRecord) -> bool:
 
-    config_path.write_text(DEFAULT_LOGGING_CONFIG)
+        # NOTE: this method will run in a different thread because its called
+        # by the QueueListener! So that's why we need to worry about thread safety.
+        # (QueueListener thread calls handle -> handle calls emit -> emit calls shouldFlush)
+
+        # We can't flush until the program has attempted to read the config file.
+        # Once that happens we can start flushing the buffer to the file handler.
+        if not config.config_storage.parsing_stage_completed:
+            return False
+
+        return (len(self.buffer) >= self.capacity) or (record.levelno >= self.flushLevel)
 
 
-def setup_queue_handlers(
-    log_queue: queue.Queue[logging.LogRecord], real_handlers: list[logging.Handler]
-) -> tuple[logging.Handler, logging.handlers.QueueListener]:
-    """
-    Create QueueHandler and QueueListener for async logging.
+# Module level cache
+# ==================
+@dataclass(frozen=True)
+class HandlerStorage:
+    """Creates an immutable dataclass that serves as in-memory storage for the
+    intialized logging handlers."""
 
-    The QueueHandler goes on loggers (producer side), and the QueueListener
-    manages the real handlers that do the actual work (consumer side).
+    file_handler: handlers.TimedRotatingFileHandler | None = None
+    memory_handler: CustomMemoryHandler | None = None
+    textual_handler: TextualHandler | None = None
+    queue_handler: handlers.QueueHandler | None = None
 
-    Why queue-based? Thread-safe, non-blocking logging. Loggers just push
-    to queue and return immediately. Background thread pulls from queue and
-    handles actual I/O/formatting.
 
-    Args:
-        log_queue: Queue for passing log records
-        real_handlers: Actual handlers (FileHandler, etc.) that process logs
+_handler_storage = HandlerStorage()
+"""Logging handler storage. For internal use in logging module."""
+
+# First get root logger (we specifically want root logger)
+logger = logging.getLogger()
+"Global root logger instance. Import this into other modules."
+
+
+def _create_file_handler_safely() -> handlers.TimedRotatingFileHandler | None:
+    """ """
+
+    logs_dir = config._get_dir_following_xdg_spec(config.XDGDirectory.STATE)
+
+    try:
+        logs_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        # NOTE: If there was an error here, the logger won't be ready yet (because
+        # we are setting up logging right now). So we have to remember to handle it later.
+        core.os_error_logger(e, "create", "logs directory")
+        return
+    try:
+        file_handler = handlers.TimedRotatingFileHandler(
+            f"{logs_dir}/{APP_NAME}.log", when="midnight", interval=1, backupCount=7
+        )
+        # valid 'when' events:
+        # S - Seconds
+        # M - Minutes
+        # H - Hours
+        # D - Days
+        # midnight - roll over at midnight
+        # W{0-6} - roll over on a certain day; 0 - Monday
+        #
+        # lower or upper case will work.
+
+    except OSError as e:
+        core.os_error_logger(e, "creating or accessing", "log file")
+        return
+
+    return file_handler
+
+    # potential config options:
+    # backup count (it goes by day so its how many days to keep - default is 1 week)
+    # daily / weekly
+
+
+def startup_logging() -> bool:
+    """Program startup logic API for the logging module
 
     Returns:
-        Tuple of (QueueHandler, QueueListener)
+        bool: True if logging startup was sucessful, False if there was an error.
+    Raises:
+        Nothing. Should catch errors without raising.
     """
-    queue_handler = logging.handlers.QueueHandler(log_queue)
 
-    # QueueListener runs in background thread, pulls from queue, dispatches to real handlers
-    # respect_handler_level=True ensures handler-level filtering still works
-    listener = logging.handlers.QueueListener(log_queue, *real_handlers, respect_handler_level=True)
+    logger.setLevel(logging.DEBUG)
 
-    return queue_handler, listener
+    dev_mode = core.check_dev_env_var()
 
+    # Create a queue for log records
+    log_queue: queue.Queue[logging.LogRecord] = queue.Queue()
 
-def create_real_handlers() -> list[logging.Handler]:
-    """
-    Create the actual handlers that will process log records.
+    # === Logging Handlers === #
 
-    These are managed by QueueListener, not attached to loggers directly.
-    Add/customize handlers here based on your needs.
+    # Note to future self: Adding new logging integrations should be as simple as
+    # importing the handler from some third party library and adding it to the logger.
 
-    Returns:
-        List of configured handlers
-    """
-    handlers = []
+    # The file handler is not added until the program has tried to read the config file.
+    # But it will still attempt to create the file on this operation:
+    memory_handler = None
+    if file_handler := _create_file_handler_safely():
 
-    # Console handler with simple formatting
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_formatter = logging.Formatter("%(levelname)s - %(message)s")
-    console_handler.setFormatter(console_formatter)
-    handlers.append(console_handler)
+        # The memory handler stores records in memory and periodically flushes
+        # them to the file handler. There's no point in initializing it if
+        # the file handler failed to initialize.
+        memory_handler = CustomMemoryHandler(target=file_handler)
+        # Memory handler doesn't use a formatter.
+        
+        formatter_files = logging.Formatter(
+            "%(asctime)s - %(threadName)s - %(levelname)s - %(message)s"
+        )
+        file_handler.setFormatter(formatter_files)
 
-    # File handler with detailed formatting
-    # You might want to make this path configurable too
-    log_dir = config_module.ensure_config_dir(APP_NAME)
-    log_file = log_dir / f"{APP_NAME}.log"
+    # Textual handler sends to the Textual dev console (in Textual dev tools).
+    # We only add it if we're in dev mode.
+    textual_handler = None
+    if dev_mode:
+        textual_handler = TextualHandler(stderr=False)
+        
+        formatter_textual = logging.Formatter("%(message)s")
+        textual_handler.setFormatter(formatter_textual)
 
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.DEBUG)
-    detailed_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    # The queue handler is the ONLY handler added to the root logger!
+    # queue handler does not use a formatter.
+    queue_handler = handlers.QueueHandler(log_queue)
+
+    # Add all handlers to the module storage
+    global _handler_storage
+    _handler_storage = HandlerStorage(
+        file_handler,
+        memory_handler,
+        textual_handler,
+        queue_handler,
     )
-    file_handler.setFormatter(detailed_formatter)
-    handlers.append(file_handler)
 
-    return handlers
+    # === Queue Listener === #
 
+    # Create the listener that will process records from the queue.
+    # The listener starts up a separate thread to process records. The python
+    # Queue class uses a threading.Condition object which has a wait() method.
+    # If the queue is empty, this method puts the thread to sleep until a new item
+    # is added, so its very efficient on CPU while waiting for new items to arrive.
 
-def setup_logging(app_name: str = APP_NAME, config_filename: str = CONFIG_FILENAME) -> None:
-    """
-    Setup logging with fileConfig and queue-based handler system.
+    handlers_list: list[logging.Handler] = []
+    if memory_handler:
+        handlers_list.append(memory_handler)
+    if textual_handler:
+        handlers_list.append(textual_handler)
 
-    Handles:
-    - Finding/creating config file in XDG-compliant location
-    - Loading base config with fileConfig
-    - Replacing placeholder handler with QueueHandler
-    - Setting up QueueListener with real handlers
-    - Ensuring listener shutdown on program exit
+    listener = handlers.QueueListener(log_queue, *handlers_list, respect_handler_level=True)
 
-    Args:
-        app_name: Application name for config directory
-        config_filename: Name of logging config file
-    """
-    # Find or create config file
-    config_path = config_module.find_config_file(app_name, config_filename)
-
-    if config_path is None:
-        # No config exists, create default
-        config_dir = config_module.ensure_config_dir(app_name)
-        config_path = config_dir / config_filename
-        create_default_logging_config(config_path)
-
-    # Load the config file using fileConfig
-    # This creates all loggers/handlers/formatters defined in the .ini file
-    # disable_existing_loggers=False preserves any loggers already created
-    logging.config.fileConfig(config_path, disable_existing_loggers=False)
-
-    # Now replace the handlers with our queue system
-    log_queue: queue.Queue[logging.LogRecord] = queue.Queue(-1)  # Unlimited queue
-    real_handlers = create_real_handlers()
-    queue_handler, listener = setup_queue_handlers(log_queue, real_handlers)
-
-    # Replace all handlers on root logger with just the QueueHandler
-    root_logger = logging.getLogger()
-    root_logger.handlers.clear()
-    root_logger.addHandler(queue_handler)
-
-    # Start the listener (background thread starts consuming from queue)
+    # Start the listener thread
     listener.start()
 
-    # Ensure listener stops cleanly on program exit
-    # This flushes remaining queue items and closes handlers
+    # === Add QueueHandler to Root Logger === #
+    logger.addHandler(queue_handler)
+
+    # Clean up - stop the listener to flush remaining records
     atexit.register(listener.stop)
 
+    # Mark the logger as ready for the error storage
+    core.error_storage.logger = logger
 
-# Example usage for other config files
-def load_app_config(app_name: str, config_filename: str) -> Any:
+    # If there was any errors during the logging setup (ie. file handler),
+    # we can log them now.
+    for err in core.error_storage.get_list_copy():
+        logger.error(str(err))
+
+    # if the file handler failed to initialize, we will consider that a failure.
+    # Note that we still want the logger initialized with the QueueHandler, even
+    # if the QueueListener doesn't have any handlers to send the logs to.
+    if file_handler is None:
+        return False
+    else:
+        return True
+
+
+def swap_memory_handler_with_file_handler() -> bool:
+    """Swap the memory handler with the file handler. If there is no file handler
+    to swap in, this will do nothing and then return False.
+    
+    Returns:
+        bool: True if the swap was successful, False if it failed.
     """
-    Generic config file loader (example for other config files).
 
-    This shows how to reuse the XDG path logic for other config files.
+    # This will only be allowed if the file handler was initialized successfully.
+    if _handler_storage.file_handler:
+        logger.addHandler(_handler_storage.file_handler)
+        if _handler_storage.memory_handler:  # logically this should never be None here
+            logger.removeHandler(_handler_storage.memory_handler)   
+        return True
+    else:
+        return False
 
-    Args:
-        app_name: Application name
-        config_filename: Config file to load
+
+def remove_memory_handler_from_logger() -> bool:
+    """Remove the MemoryHandler from the root logger. If there is no MemoryHandler,
+    (for example it was not initialized because the file handler had a problem),
+    this will do nothing and then return False.
 
     Returns:
-        Parsed config (adjust return type based on parser used)
+        bool: True if the MemoryHandler was removed successfully, False if it failed.
     """
-    from configparser import ConfigParser
 
-    config_path = config_module.find_config_file(app_name, config_filename)
-
-    if config_path is None:
-        # Handle missing config - could create default, raise error, etc.
-        config_dir = config_module.ensure_config_dir(app_name)
-        config_path = config_dir / config_filename
-        # Create default config here...
-
-    parser = ConfigParser()
-    # read() can fail if file is malformed
-    try:
-        parser.read(config_path)
-    except Exception as e:
-        # Log error (if logging is set up) and potentially fall back to defaults
-        logging.error(f"Failed to parse config file {config_path}: {e}")
-        raise
-
-    return parser
-
-
-if __name__ == "__main__":
-    # Example setup
-    setup_logging()
-
-    # Test it
-    logger = logging.getLogger(__name__)
-    logger.debug("Debug message")
-    logger.info("Info message")
-    logger.warning("Warning message")
-    logger.error("Error message")
+    if _handler_storage.memory_handler in logger.handlers:
+        logger.removeHandler(_handler_storage.memory_handler)
+        return True
+    else:
+        return False

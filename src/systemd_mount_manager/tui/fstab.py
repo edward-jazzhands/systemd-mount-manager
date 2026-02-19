@@ -32,6 +32,7 @@ from rich.text import Text
 
 # Local imports
 import systemd_mount_manager.logic as logic
+from systemd_mount_manager.logic.log_setup import logger
 from systemd_mount_manager.tui.screens import SudoWarningScreen, SudoWarningScreenResult
 
 # Goals:
@@ -58,7 +59,7 @@ class FstabsCard(Container):
         self.get_fstabs()
 
     def get_fstabs(self) -> None:
-        self.log("Reading /etc/fstab")
+        logger.debug("Reading /etc/fstab")
         with open("/etc/fstab", "r") as f:
             fstab_str = f.read()
         fstab_data = logic.fstab.parse_fstab(fstab_str)
@@ -69,7 +70,7 @@ class FstabsCard(Container):
         # for line in fstab_data_pretty:
         #     fstab_con.mount(Static(line, classes="wauto"))
         fstab_con.scroll_home(animate=False)
-        # self.log(fstab_data)
+        # logger.debug(fstab_data)
 
     @on(Button.Pressed, "#refresh-button")
     def refresh_button_pressed(self) -> None:
@@ -79,18 +80,20 @@ class FstabsCard(Container):
     @work
     async def edit_button_pressed(self) -> None:
 
-        warning_mode: bool = logic.config.config.getboolean("DEFAULT", "show_sudo_warning")
+        # warning_mode: bool = logic.config.config.getboolean("DEFAULT", "show_sudo_warning")
+        warning_mode: bool = True
         if warning_mode:
             result = await self.app.push_screen_wait(SudoWarningScreen("Editing /etc/fstab"))
             if result == SudoWarningScreenResult.CANCEL:
                 return
             elif result == SudoWarningScreenResult.PROCEED_DONT_SHOW_AGAIN:
-                logic.config.config.set("DEFAULT", "show_sudo_warning", "False")
+                # logic.config.config.set("DEFAULT", "show_sudo_warning", "False")
+                pass
 
         try:
             editor: str = logic.core.get_editor()
         except Exception as e:
-            self.log(f"Could not find editor: {e}")
+            logger.debug(f"Could not find editor: {e}")
             self.notify("ERROR: Could not find editor")
             return
         with self.app.suspend():

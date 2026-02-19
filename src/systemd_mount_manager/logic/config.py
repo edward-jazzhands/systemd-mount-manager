@@ -2,43 +2,32 @@
 
 # python standard lib
 from __future__ import annotations
-from systemd_mount_manager.logic import config
-from packaging.utils import _
+from typing import Any
 import enum
-from textwrap import dedent
 import os
+import tomllib
 from pathlib import Path
-from dataclasses import dataclass, replace
-import errno
-from threading import Lock
-from collections import deque
-from threading import Lock
+from dataclasses import dataclass  # , replace
 
 # Third party
-from pydantic import BaseModel, Field, ValidationError
-from textual import log as textual_log
-import yaml
+from pydantic import BaseModel, ValidationError, TypeAdapter, ConfigDict
+import tomlkit
+import tomlkit.exceptions
+import tomlkit.items
 
 # Local imports
 import systemd_mount_manager.logic.core as core
 
-# need to handle:
+# CONSTANTS
+DEFAULT_SYS_CONFIG_DIR = "~/.config"
+DEFAULT_SYS_LOGS_DIR = "~/.local/state"
+APP_NAME = core.APP_NAME
 
-# Missing files
-# Missing keys
-# Malformed values
-# Is path technically valid
-# Is path actually writable
-# Permissions issues reading the config file
-# Concurrent modification
-# Pop-up warnings if a config value has changed that requires an action
-
-_config_lock = Lock()
 
 class XDGDirectory(enum.StrEnum):
     """The valid env vars this program is concerned with for XDG paths.
     XDG spec env vars must be absolute paths.
-    
+
     CONFIG: "XDG_CONFIG_HOME" - For config files
     STATE: "XDG_STATE_HOME" - For logs
     """
@@ -49,44 +38,97 @@ class XDGDirectory(enum.StrEnum):
 
 class DirectoriesEnum(enum.StrEnum):
     """Enum for directory types"""
+
     CONFIG = "config"
     LOGS = "logs"
     MANAGED_MOUNTS = "managed_mounts"
 
-# Pydantic Models
-class DirectoriesSchema(BaseModel):
+
+# Pydantic Model
+class UserConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     logs_dir: str
     managed_mounts_dir: str
-
-class MiscSchema(BaseModel):
     show_sudo_warning: bool
-    show_config_warning: bool
     textual_theme: str
 
-class ConfigPayload(BaseModel):
-    directories: DirectoriesSchema
-    misc: MiscSchema
+
+class ConfigStatus(enum.StrEnum):
+    """Status of each config field
+
+    | Status | String | Meaning |
+    | ------ | ------ | ------- |
+    | VALID | "valid" | The field exists and is valid |
+    | MISSING | "missing" | The field is not present in the config file |
+    | EMPTY | "empty" | The field is present but has an empty value |
+    | INVALID | "invalid" | The field is present but failed validation |
+    | NONEXISTENT | "nonexistent" | The field is not used by the program |
+    | NOTYPE | "notype" | The field is used by the program but has no type annotation |
+    """
+
+    VALID = "valid"
+    MISSING = "missing"
+    EMPTY = "empty"
+    INVALID = "invalid"
+    NONEXISTENT = "nonexistent"
+    NOTYPE = "notype"
+
+
+default_config = UserConfig(
+    logs_dir=f"{DEFAULT_SYS_LOGS_DIR}/{APP_NAME}",
+    managed_mounts_dir=f"{DEFAULT_SYS_CONFIG_DIR}/{APP_NAME}",
+    show_sudo_warning=True,
+    textual_theme="textual-dark",
+)
+"default_config is a UserConfig object with default values"
+
+
+DEFAULT_CONFIG_TOML = f"""\
+# Any field that is missing (eg. commented out) or empty will use the default value.
+# Uncomment a field to change its value.
+
+[directories]
+# Default is $XDG_STATE_HOME/systemd-mount-manager if $XDG_STATE_HOME is set, 
+# otherwise default is {DEFAULT_SYS_LOGS_DIR}/{APP_NAME}.
+# logs_dir = '{default_config.logs_dir}'
+
+# Default is $XDG_CONFIG_HOME/systemd-mount-manager if $XDG_STATE_HOME is set, 
+# otherwise default is {DEFAULT_SYS_CONFIG_DIR}/{APP_NAME}.
+# managed_mounts_dir = '{default_config.managed_mounts_dir}'
+
+[misc]
+# When true, the program will warn you before performing any operation that
+# requires you to suspend out to the terminal and enter your password.
+# Default is true.
+# show_sudo_warning = {default_config.show_sudo_warning}
+
+# The theme to use for the TUI. See available themes in the settings menu.
+# Default is 'textual-dark'.
+# textual_theme = {default_config.textual_theme}
+"""
 
 
 # Module level cache
 # ==================
 
+
 @dataclass(frozen=True)
 class ConfigStorage:
     """Creates an immutable dataclass that serves as in-memory storage for the
-    current config payload."""
+    current config payload. If no argument is provided, it will use default_config."""
 
-    config: ConfigPayload | None = None
+    config: UserConfig = default_config
+    parsing_stage_completed: bool = False
 
-    def replace(self, config: ConfigPayload) -> ConfigStorage:
+    def replace(self, config: UserConfig, parsing_stage_completed: bool) -> ConfigStorage:
         """Return a new ConfigStorage object with the specified config payload"""
-        return ConfigStorage(config=config)
+        return ConfigStorage(config=config, parsing_stage_completed=parsing_stage_completed)
 
 
-config_storage = ConfigStorage(None)
+config_storage = ConfigStorage(default_config)
 """Global config storage object. This object is immutable and thread-safe.
 Use the `replace` method to create a new ConfigStorage object."""
-
 
 
 # Default Configs Generation
@@ -97,8 +139,6 @@ def _get_dir_following_xdg_spec(xdg_env_var: XDGDirectory) -> Path:
     """
     Get a Path representing one of the supported directories following XDG spec.
 
-    Remember to run expanduser() on the path if using it to create a file or directory.
-
     Priority:
     1. {xdg_env_var}/systemd-mount-manager (if the {xdg_env_var} is set)
     2. Default path (fallback)
@@ -106,104 +146,29 @@ def _get_dir_following_xdg_spec(xdg_env_var: XDGDirectory) -> Path:
     Args:
         xdg_env_var (XDGDirectory): The XDG environment variable to use
     Returns:
-        Path | None: The resolved path, or None if there was an error
+        Path: The absolute path INCLUDING the app name
     """
 
     # xdg_env_var takes priority if set and valid
     if xdg_dir := os.getenv(xdg_env_var):
         xdg_path = Path(xdg_dir.strip())
         if xdg_path.is_absolute():
-            return Path(xdg_dir.strip()) / "systemd-mount-manager"
+            return Path(xdg_dir.strip()) / APP_NAME
 
     # If the XDG env var is not set or valid, then fallback to defaults.
 
     if xdg_env_var == XDGDirectory.CONFIG:
-        dir_path = Path("~/.config/systemd-mount-manager")
+        dir_path = Path(DEFAULT_SYS_CONFIG_DIR).expanduser() / APP_NAME
     elif xdg_env_var == XDGDirectory.STATE:
-        dir_path = Path("~/.local/state/systemd-mount-manager")
+        dir_path = Path(DEFAULT_SYS_LOGS_DIR).expanduser() / APP_NAME
 
     return dir_path
-
-
-# def _safely_resolve_path(path_obj: Path) -> Path | None:
-#     """Safely resolve the path. This does not try to check if the path exists.
-    
-#     Errors could happen if the path is invalid and cannot be resolved. This
-#     will log the error and return None.
-#     """
-
-#     try:
-#         return path_obj.resolve()
-#     except Exception as e:
-#         e.add_note(f"Unable to resolve path: {path_obj}")
-#         core.error_storage.add_error(e)
-#         return None
-
-
-def _generate_config_defaults_dict() -> ConfigPayload:
-    """Generate a dict of default config values
-    
-    Returns:
-        ConfigPayload: A dict of default config values
-    """
-
-    config_dir = _get_dir_following_xdg_spec(XDGDirectory.CONFIG)
-    logs_dir = _get_dir_following_xdg_spec(XDGDirectory.STATE)
-
-    return ConfigPayload(
-        directories = DirectoriesSchema(
-            logs_dir=str(logs_dir),
-            managed_mounts_dir=str(config_dir / "managed-mounts"),
-        ),
-        misc = MiscSchema(
-            show_sudo_warning=True,
-            show_config_warning=True,
-            textual_theme="textual-dark",
-        )
-    )
-
-def _convert_dict_to_yaml_file(config_dict: ConfigPayload) -> str:
-    """Convert a dict of config values to a YAML string
-
-    Args:
-        config_dict (ConfigPayload): The dict of config values
-    Returns:
-        str: A YAML string suitable to write out to a file, with comments included
-    """
-
-    return dedent(f"""\
-    directories:
-      # Default logs dir is ~/.local/state/systemd-mount-manager, unless XDG_STATE_HOME
-      # is set when this file is generated.
-      logs_dir: {config_dict.directories.logs_dir}
-
-      # Default managed mounts dir is ~/.config/systemd-mount-manager/managed-mounts,
-      # unless XDG_CONFIG_HOME is set when this file is generated.
-      managed_mounts_dir: {config_dict.directories.managed_mounts_dir}
-
-    misc:
-      # When true, the program will warn you before performing any operation that
-      # requires you to suspend out to the terminal and enter your password.
-      show_sudo_warning: {config_dict.misc.show_sudo_warning}
-
-      # When true, the program will warn you before allowing you to make changes
-      # to this config file using the in-app settings menu. This is because using
-      # the settings menu will set all comments in this file back to defaults.
-      show_config_warning: {config_dict.misc.show_config_warning}
-
-      # The theme to use for the TUI. See available themes in the settings menu.
-      textual_theme: {config_dict.misc.textual_theme}
-    """)
-
 
 
 def _create_default_config_file() -> bool:
     """This will create a default config file in the user's config directory
     if there is not already a config file present.
 
-    Args:
-        config_dir (Path): The path to the config directory (use the
-            `_get_dir_following_xdg_spec` function to get this)
     Returns:
         bool: True if the file was created, False if it already existed
     Raises:
@@ -211,8 +176,8 @@ def _create_default_config_file() -> bool:
         ValueError: if the config directory is not set
     """
 
-    config_dir = _get_dir_following_xdg_spec(XDGDirectory.CONFIG).expanduser()
-    config_file_path = config_dir / "config.yaml"
+    config_dir = _get_dir_following_xdg_spec(XDGDirectory.CONFIG)
+    config_file_path = config_dir / "config.toml"
 
     try:
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -221,8 +186,8 @@ def _create_default_config_file() -> bool:
         raise e
 
     try:
-        with open(config_file_path, "x") as f: # x = exclusive
-            f.write(_convert_dict_to_yaml_file(_generate_config_defaults_dict()))
+        with open(config_file_path, "x") as f:  # x = exclusive
+            f.write(DEFAULT_CONFIG_TOML)
     except FileExistsError:
         return False
     except OSError as e:
@@ -233,9 +198,9 @@ def _create_default_config_file() -> bool:
 
     # If we got here then a new file was written successfully
     return True
-        
 
-def config_startup() -> bool:
+
+def startup_config() -> bool:
     """Program startup logic API for the config module
 
     Returns:
@@ -250,44 +215,52 @@ def config_startup() -> bool:
     except Exception as e:
         # This means we couldn't create either the config dir or the config file.
         e.add_note(f"Error in startup! Couldn't create a config file. See logs for details.")
+        core.error_storage.add_error(e)
         return False
-    
+
+    # If we got here, then we know we have a config dir and a config file
+    # that we can access.
+
     global config_storage
-    # If we got here then we know we have a config dir and a config file.
+
     if creation_result is True:
-        # True means we created a new config file with default values.
-        # So we don't need to parse the config file, we can load the defaults
-        # straight into memory.
-        config_storage = ConfigStorage(_generate_config_defaults_dict())
-    elif creation_result is False:
+        # If creation_result is True, we created a new config file with default values.
+        # We still need to mark that the parsing stage has been completed.
+        config_storage = ConfigStorage(parsing_stage_completed=True)
+    else:
         # False means there was an existing config file.
         # We must parse it.
         try:
-            config_storage = ConfigStorage(read_config_file())
+            config_storage = ConfigStorage(read_config_file(), parsing_stage_completed=True)
         except Exception as e:
             e.add_note(f"Error in startup! Couldn't read your config file. See logs for details.")
+            core.error_storage.add_error(e)
             return False
-    
+
     return True
 
 
-def read_config_file() -> ConfigPayload:
-    """Read the config file and return a ConfigPayload object (pydantic model)
-    
+def read_config_file() -> UserConfig:
+    """Read the config file and return a UserConfig object (pydantic model).
+
+    Note to future self / other programmers: This is designed to be re-usable.
+    It calls the `safely_parse_TOMLDocument` function, which is designed to
+    take a TOMLDocument object and a Pydantic model.
+
     Returns:
-        ConfigPayload: The config file contents
+        UserConfig: The config file contents
     Raises:
         OSError: if there is a problem reading the config file or resolving its path
-        yaml.YAMLError: if the config file is not valid YAML
+        tomlkit.exceptions.TOMLKitError: if the config file is not valid TOML
         ValidationError: if the config file fails pydantic validation
     """
     # Note to self: by catching the errors here, we can differentiate between:
     # - error opening the file (permission issues)
-    # - error parsing the file (malformed YAML)
+    # - error parsing the file (malformed TOML)
     # - error validating the file (malformed values)
 
-    config_dir = _get_dir_following_xdg_spec(XDGDirectory.CONFIG).expanduser()
-    config_file_path = config_dir / "config.yaml"
+    config_dir = _get_dir_following_xdg_spec(XDGDirectory.CONFIG)
+    config_file_path = config_dir / "config.toml"
 
     try:
         f = open(config_file_path, "r")
@@ -297,13 +270,167 @@ def read_config_file() -> ConfigPayload:
         raise e
 
     try:
-        config_dict = yaml.safe_load(f)    
-        return ConfigPayload(**config_dict)
-    except (yaml.YAMLError, ValidationError) as e:
-        e.add_note(f"Error trying to parse config file at: {config_dir}")
+        config_tomldoc = tomlkit.parse(f.read())
+    except tomlkit.exceptions.ParseError as e:
+        e.add_note(
+            f"Error parsing config file at: {config_dir} -- "
+            f"Error found at line {e.line}, column {e.col}"
+        )
         core.error_storage.add_error(e)
         raise e
-        
+    except tomlkit.exceptions.TOMLKitError as e:
+        e.add_note(f"Error parsing config file at: {config_dir}")
+        core.error_storage.add_error(e)
+        raise e
+
+    validated_config = safely_parse_TOMLDocument(config_tomldoc, UserConfig)
+
+    # Now we can merge the validated config with the default config.
+    # Any field that is not marked as valid (or notype) will be left
+    # as the default value.
+    merged_dict = merge_validated_config(validated_config)
+
+    # At this point it should be validated and safe, but just in case...
+    try:
+        return UserConfig(**merged_dict)
+    except ValidationError as e:
+        e.add_note(f"Unforseen error validating config file at: {config_dir}")
+        core.error_storage.add_error(e)
+        raise e
+
+
+def merge_validated_config(validated_config: dict[str, ConfigField]) -> dict[str, Any]:
+    """Merge a dict returned from safely_parse_TOMLDocument with the
+    default config dict."""
+
+    # model_dump() converts a model instance into a dict. So tmp_dict here is
+    # a dict with all the default values.
+    tmp_dict: dict[str, Any] = default_config.model_dump()
+    for field_name, field in validated_config.items():
+
+        if field.status == ConfigStatus.VALID:
+            tmp_dict.update({field_name: field.value})
+        elif field.status in (ConfigStatus.MISSING, ConfigStatus.EMPTY, ConfigStatus.INVALID):
+            pass  # Just leave as the default value
+            # for INVALID, a pydantic ValidationError should have been added to the
+            # error_storage by the safely_parse_TOMLDocument function.
+        elif field.status == ConfigStatus.NONEXISTENT:
+            # This won't affect the program, but we will still alert the user
+            core.error_storage.add_error(
+                ValueError(
+                    f"Config field {field_name} in your config file is not used by this program."
+                )
+            )
+        elif field.status == ConfigStatus.NOTYPE:
+            # If there's no type then there's nothing to validate. Must assume
+            # this is intentional.
+            tmp_dict.update({field_name: field.value})
+        else:
+            raise RuntimeError(f"Unexpected ConfigStatus type: {field.status}")
+
+    return tmp_dict
+
+
+class ConfigField:
+    """Wrapper to track both the value and its parsing status.
+    Does NOT track the key."""
+
+    def __init__(self, value: Any = None, status: ConfigStatus = ConfigStatus.MISSING):
+        self.value = value
+        self.status = status
+
+    def __repr__(self) -> str:
+        return f"ConfigField(value={self.value}, status={self.status.value})"
+
+
+def safely_parse_TOMLDocument(
+    tomldoc: tomlkit.TOMLDocument, model: type[BaseModel]
+) -> dict[str, ConfigField]:
+    """
+    Parse tomlkit.TOMLDocument object using a provided Pydantic model. This will validate
+    the TOMLDocument object against the model and return a dict, mapping field names
+    to our custom ConfigField objects (in this module).
+
+    This tracks whether each field is valid, missing, empty, or invalid. It should
+    allow for partial parsing of the config file.
+
+    Note to future self: This takes a model arg because its designed to be re-usable
+    for future projects.
+
+    Args:
+        tomldoc (tomlkit.TOMLDocument): The TOMLDocument object to parse
+        model (type[BaseModel]): The Pydantic model to validate against
+    Returns:
+        dict[str, ConfigField]: A dict mapping field names to ConfigField objects.
+    """
+
+    # Initialize result dict with default values (None, Missing)
+    result = {field_name: ConfigField() for field_name in model.model_fields.keys()}
+
+    # Initialize type adapters for each field.
+    # NOTE: This is safe here because I built the model, I know the field types.
+    # This might not be a safe operation if that wasn't the case.
+    # For the purpose of this function, we're assuming the programmer knows the field types
+    # and will be testing them in development, so there's no reason to catch errors here.
+    adapters = {
+        field_name: TypeAdapter(field_type.annotation)
+        for field_name, field_type in model.model_fields.items()
+    }
+
+    # Process every field that exists in the TOML
+    for field_name, raw_value in tomldoc.items():
+        if isinstance(raw_value, tomlkit.items.Table):
+            # Tables are essentially dictionaries, so we can treat them the same
+            for table_field_name, table_raw_value in raw_value.items():
+                if table_field_name in model.model_fields:
+
+                    # Check if the value is empty string
+                    if table_raw_value == "":
+                        result[table_field_name] = ConfigField(
+                            value=table_raw_value, status=ConfigStatus.EMPTY
+                        )
+                    else:
+                        # the annotation here effectively tells us the field type.
+                        # This is always `None` by default if the field doesn't have
+                        # a type annotation, so its always safe to check it in this manner.
+                        # NOTE: This only works for standard python objects.
+                        # (ie. string, int, bool, list, dict, etc.)
+                        # I should do more testing on using this with nested pydantic models.
+                        if model.model_fields[table_field_name].annotation:
+                            # Try to validate just this single field
+                            try:
+                                validated_value = adapters[table_field_name].validate_python(
+                                    table_raw_value
+                                )
+
+                                result[table_field_name] = ConfigField(
+                                    value=validated_value, status=ConfigStatus.VALID
+                                )
+                            except ValidationError as e:
+                                # Field exists but failed validation (wrong type, etc)
+                                core.error_storage.add_error(e)
+                                result[table_field_name] = ConfigField(
+                                    value=table_raw_value, status=ConfigStatus.INVALID
+                                )
+                        else:
+                            # Field exists but has no type annotation or is not a standard python object
+                            result[table_field_name] = ConfigField(
+                                value=table_raw_value, status=ConfigStatus.NOTYPE
+                            )
+                else:
+                    # Field doesn't exist in the model
+                    # This is useful to give users an error about non-existent fields (ie typos)
+                    result[table_field_name] = ConfigField(status=ConfigStatus.NONEXISTENT)
+
+        else:
+            # if it's not a table, it must be a top-level field.
+            # For this program, I don't care about top-level fields. But future me might care.
+            pass
+
+    return result
+
+
+# ===============================================
 
 
 def change_managed_mounts_dir(new_dir: str, migrate: bool = False) -> bool:
