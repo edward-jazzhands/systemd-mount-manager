@@ -12,18 +12,11 @@ import click
 # local imports
 import systemd_mount_manager.logic as logic
 
-### Global dev mode flag -
-# No need to change this directly. Use:
-# 1) --dev flag on CLI
-# 2) set SMM_DEV_MODE env var to a truthy value (e.g. 1, true, etc.)
-# 3) create empty flag file at ~/.config/systemd-mount-manager/.devmode
-DEV_MODE = False
-
-# try:
-#     import click
-# except ImportError:
-#     print("Warning: click not found. Did you use --system-site-packages?", file=sys.stderr)
-#     sys.exit(1)
+DEBUG = 10
+INFO = 20
+WARNING = 30
+ERROR = 40
+CRITICAL = 50
 
 
 # ANSI color codes
@@ -37,9 +30,10 @@ class Color:
     NC = "\033[0m"  # No Color
 
 
-def debug_msg(msg: str, debug: bool) -> None:
-    if debug:
+def log(level: int, msg: str, dev: bool) -> None:
+    if dev:
         click.echo(msg, err=True)
+    logic.logger.log(level=level, msg=msg)
 
 
 def is_graphical_session(dev: bool) -> bool:
@@ -48,7 +42,7 @@ def is_graphical_session(dev: bool) -> bool:
 
     # Primary check (most reliable on modern systems)
     if os.environ.get("XDG_SESSION_TYPE") in ("x11", "wayland"):
-        debug_msg(f"✓ Graphical session detected: {os.environ.get('XDG_SESSION_TYPE')}", dev)
+        log(DEBUG, f"✓ Graphical session detected: {os.environ.get('XDG_SESSION_TYPE')}", dev)
         return True
 
     # Fallback for X11 sessions that don't set XDG_SESSION_TYPE
@@ -61,17 +55,17 @@ def is_graphical_session(dev: bool) -> bool:
                 timeout=2,
                 check=True,
             )
-            debug_msg("✓ Graphical session detected: X11", dev)
+            log(DEBUG, "✓ Graphical session detected: X11", dev)
             return True
         except (subprocess.SubprocessError, FileNotFoundError):
             pass
 
     # Some Wayland compositors set WAYLAND_DISPLAY
     if "WAYLAND_DISPLAY" in os.environ:
-        debug_msg("✓ Graphical session detected: Wayland", dev)
+        log(DEBUG, "✓ Graphical session detected: Wayland", dev)
         return True
 
-    debug_msg("No graphical desktop environment detected", dev)
+    log(DEBUG, "No graphical desktop environment detected", dev)
     return False
 
 
@@ -102,19 +96,22 @@ def check_systemd(dev: bool) -> bool:
             "maintenance",
         ]
 
+    
     if pid1_is_systemd and systemd_is_active:
-        debug_msg("systemd is the init system and running", dev)
+        log(DEBUG, f"systemd state: {systemd_state}", dev)
         return True
     elif pid1_is_systemd:
-        click.echo(
+        log(WARNING, 
             f"WARNING: systemd is PID 1 but state is: {systemd_state}. "
-            "Program may not function correctly."
+            "Program may not function correctly.",
+            True,   # always print to console regardless of dev mode
         )
         return True
     else:
-        click.echo(
+        log(ERROR, 
             f"ERROR: PID 1 is not systemd. Found: {ps_result.stdout.strip()}"
-            "\nSystemd Mount Manager requires systemd to be the active OS init system."
+            "\nSystemd Mount Manager requires systemd to be the active OS init system.",
+            True,   # always print to console regardless of dev mode
         )
         return False
 
@@ -169,6 +166,21 @@ def cli(ctx: click.Context) -> None:
     Note that systemd is required in order for the program to start."""
 
     dev = logic.core.check_dev_env_var()
+    log(DEBUG, f"Dev mode: {dev}", dev)
+
+    # Initialization
+    # If any exceptions were raised during the initialization process,
+    # they'll be sent to the error storage in the core module, which will
+    # log them as they come in. So we don't need to log those exceptions here.
+    # Here we just log the final result (booleans) as debug messages.
+
+    startup_logging_result: bool = logic.log_setup.startup_logging()
+    log(DEBUG, f"Logging startup result: {startup_logging_result}", dev)
+    # This will return True if the file handler was initialized successfully,
+    # or false if the file handler failed to initialize.
+    # We can continue but we will want to alert the user when the program starts.
+    # There will be other logging handlers that should be essentially guaranteed
+    # to be initialized.
 
     sysd_check = check_systemd(dev)
     if sysd_check is False:
@@ -177,45 +189,27 @@ def cli(ctx: click.Context) -> None:
         else:
             click.echo("Running anyway because dev mode is active...")
 
-    # Initialization
-    if startup_logging_result := logic.log_setup.startup_logging():
-        # This will return True if the file handler was initialized successfully,
-        # OR if the program is running in dev mode (we have the dev console)
-        debug_msg("Logging startup successful", dev)
-    else:
-        # This will return False if the file handler failed to initialize, AND
-        # the program is NOT running in dev mode.
-        debug_msg("Logging startup failed", dev)
-        # We can continue but we will want to alert the user when the program starts.
+    startup_config_result: bool = logic.config.startup_config()
+    log(DEBUG, f"Config startup result: {startup_config_result}", dev)
+    # True means either we successfully created a new config file, or we
+    # were able to read an existing config file.
 
-    if startup_config_result := logic.config.startup_config():
-        # True means either we successfully created a new config file, or we
-        # were able to read an existing config file.
-        debug_msg("Config startup successful", dev)
-    else:
-        # False means we couldn't create a new config file, or we couldn't read
-        # an existing one. The program will fall back to the default config.
-        debug_msg("Config startup failed", dev)
-        # We can continue but we will want to alert the user
+    # False means we couldn't create a new config file, or we couldn't read
+    # an existing one. The program will fall back to the default config.
+    # We can continue but we will want to alert the user
 
-        # click.echo(
-        #     f"{Color.RED}Attention:{Color.NC} A configuration error has prevented "
-        #     "the program from starting. Up to the last 5 errors are shown below."
-        # )
-        # errors = list(logic.core.error_storage.pop_errors())
-        # for e in errors[-5:]:
-        #     click.echo(str(e))
+    # Once we've confirmed the config startup has been attempted,
+    # we can swap out the memory handler for the file handler.
+    file_handler_result: bool = logic.log_setup.add_file_handler_to_logger()
+    log(DEBUG, f"File handler startup result: {file_handler_result}", dev)
 
     startup_results = logic.core.StartupResult(
         logging=startup_logging_result,
         config=startup_config_result,
+        handler_swap=file_handler_result,
         dev=dev,
     )
     ctx.obj = startup_results
-
-    # Once we've confirmed the config startup has been attempted,
-    # we can swap out the memory handler for the file handler.
-    swap_result = logic.log_setup.swap_memory_handler_with_file_handler()
 
 
 @cli.command()

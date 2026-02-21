@@ -5,6 +5,7 @@ if TYPE_CHECKING:
     import logging
 import copy
 import sys
+import enum
 import os
 import shutil
 from pathlib import Path
@@ -21,7 +22,8 @@ from threading import Lock
 # Program Constants
 SYSTEMD_PATH = Path("/etc/systemd/system/")
 APP_NAME = "systemd-mount-manager"
-
+DEFAULT_SYS_CONFIG_DIR = "~/.config"
+DEFAULT_SYS_LOGS_DIR = "~/.local/state"
 
 # class UserError(Exception):
 #     """Base class for exceptions in Systemd Mount Manager."""
@@ -33,6 +35,7 @@ class StartupResult:
 
     logging: bool
     config: bool
+    handler_swap: bool
     dev: bool
 
 
@@ -71,6 +74,9 @@ class ErrorStorage:
         # If that happens then we can't just send it to the logger, its not ready yet.
         if self.logger:
             self.logger.error(str(e))
+
+        # The logger will look into the error storage itself once it has 
+        # initialized and log any errors that were saved.
 
     def get_list_copy(self) -> list[Exception]:
         """Return a copy of the error list"""
@@ -133,6 +139,48 @@ def os_error_logger(e: OSError, action: str, description: str) -> None:
     error_storage.add_error(e)
 
 
+class XDGDirectory(enum.StrEnum):
+    """The valid env vars this program is concerned with for XDG paths.
+    XDG spec env vars must be absolute paths.
+
+    CONFIG: "XDG_CONFIG_HOME" - For config files
+    STATE: "XDG_STATE_HOME" - For logs
+    """
+
+    CONFIG = "XDG_CONFIG_HOME"
+    STATE = "XDG_STATE_HOME"
+
+
+def _get_dir_following_xdg_spec(xdg_env_var: XDGDirectory) -> Path:
+    """
+    Get a Path representing one of the supported directories following XDG spec.
+
+    Priority:
+    1. {xdg_env_var}/systemd-mount-manager (if the {xdg_env_var} is set)
+    2. Default path (fallback)
+
+    Args:
+        xdg_env_var (XDGDirectory): The XDG environment variable to use
+    Returns:
+        Path: The absolute path INCLUDING the app name
+    """
+
+    # xdg_env_var takes priority if set and valid
+    if xdg_dir := os.getenv(xdg_env_var):
+        # logger.debug(f"XDG env var {xdg_env_var} set to {xdg_dir}")
+        xdg_path = Path(xdg_dir.strip())
+        if xdg_path.is_absolute():
+            return Path(xdg_dir.strip()) / APP_NAME
+
+    # If the XDG env var is not set or valid, then fallback to defaults.
+
+    if xdg_env_var == XDGDirectory.CONFIG:
+        dir_path = Path(DEFAULT_SYS_CONFIG_DIR).expanduser() / APP_NAME
+    elif xdg_env_var == XDGDirectory.STATE:
+        dir_path = Path(DEFAULT_SYS_LOGS_DIR).expanduser() / APP_NAME
+
+    # logger.debug(f"Using {dir_path} as config dir")
+    return dir_path
 
 # @dataclass()
 # class StartupResultStorage:

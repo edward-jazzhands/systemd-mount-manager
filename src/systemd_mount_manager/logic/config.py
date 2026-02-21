@@ -16,24 +16,9 @@ import tomlkit.exceptions
 import tomlkit.items
 
 # Local imports
+# Remember: Core and logging are both loaded before the config module.
 import systemd_mount_manager.logic.core as core
-
-# CONSTANTS
-DEFAULT_SYS_CONFIG_DIR = "~/.config"
-DEFAULT_SYS_LOGS_DIR = "~/.local/state"
-APP_NAME = core.APP_NAME
-
-
-class XDGDirectory(enum.StrEnum):
-    """The valid env vars this program is concerned with for XDG paths.
-    XDG spec env vars must be absolute paths.
-
-    CONFIG: "XDG_CONFIG_HOME" - For config files
-    STATE: "XDG_STATE_HOME" - For logs
-    """
-
-    CONFIG = "XDG_CONFIG_HOME"
-    STATE = "XDG_STATE_HOME"
+from systemd_mount_manager.logic.log_setup import logger
 
 
 class DirectoriesEnum(enum.StrEnum):
@@ -76,8 +61,8 @@ class ConfigStatus(enum.StrEnum):
 
 
 default_config = UserConfig(
-    logs_dir=f"{DEFAULT_SYS_LOGS_DIR}/{APP_NAME}",
-    managed_mounts_dir=f"{DEFAULT_SYS_CONFIG_DIR}/{APP_NAME}",
+    logs_dir=f"{core.DEFAULT_SYS_LOGS_DIR}/{core.APP_NAME}",
+    managed_mounts_dir=f"{core.DEFAULT_SYS_CONFIG_DIR}/{core.APP_NAME}",
     show_sudo_warning=True,
     textual_theme="textual-dark",
 )
@@ -90,11 +75,11 @@ DEFAULT_CONFIG_TOML = f"""\
 
 [directories]
 # Default is $XDG_STATE_HOME/systemd-mount-manager if $XDG_STATE_HOME is set, 
-# otherwise default is {DEFAULT_SYS_LOGS_DIR}/{APP_NAME}.
+# otherwise default is {core.DEFAULT_SYS_LOGS_DIR}/{core.APP_NAME}.
 # logs_dir = '{default_config.logs_dir}'
 
 # Default is $XDG_CONFIG_HOME/systemd-mount-manager if $XDG_STATE_HOME is set, 
-# otherwise default is {DEFAULT_SYS_CONFIG_DIR}/{APP_NAME}.
+# otherwise default is {core.DEFAULT_SYS_CONFIG_DIR}/{core.APP_NAME}.
 # managed_mounts_dir = '{default_config.managed_mounts_dir}'
 
 [misc]
@@ -135,36 +120,6 @@ Use the `replace` method to create a new ConfigStorage object."""
 # ==========================
 
 
-def _get_dir_following_xdg_spec(xdg_env_var: XDGDirectory) -> Path:
-    """
-    Get a Path representing one of the supported directories following XDG spec.
-
-    Priority:
-    1. {xdg_env_var}/systemd-mount-manager (if the {xdg_env_var} is set)
-    2. Default path (fallback)
-
-    Args:
-        xdg_env_var (XDGDirectory): The XDG environment variable to use
-    Returns:
-        Path: The absolute path INCLUDING the app name
-    """
-
-    # xdg_env_var takes priority if set and valid
-    if xdg_dir := os.getenv(xdg_env_var):
-        xdg_path = Path(xdg_dir.strip())
-        if xdg_path.is_absolute():
-            return Path(xdg_dir.strip()) / APP_NAME
-
-    # If the XDG env var is not set or valid, then fallback to defaults.
-
-    if xdg_env_var == XDGDirectory.CONFIG:
-        dir_path = Path(DEFAULT_SYS_CONFIG_DIR).expanduser() / APP_NAME
-    elif xdg_env_var == XDGDirectory.STATE:
-        dir_path = Path(DEFAULT_SYS_LOGS_DIR).expanduser() / APP_NAME
-
-    return dir_path
-
-
 def _create_default_config_file() -> bool:
     """This will create a default config file in the user's config directory
     if there is not already a config file present.
@@ -176,7 +131,7 @@ def _create_default_config_file() -> bool:
         ValueError: if the config directory is not set
     """
 
-    config_dir = _get_dir_following_xdg_spec(XDGDirectory.CONFIG)
+    config_dir = core._get_dir_following_xdg_spec(core.XDGDirectory.CONFIG)
     config_file_path = config_dir / "config.toml"
 
     try:
@@ -184,6 +139,8 @@ def _create_default_config_file() -> bool:
     except OSError as e:
         core.os_error_logger(e, "create", "config directory")
         raise e
+
+    logger.debug(f"Confirmed config dir at {config_dir}")
 
     try:
         with open(config_file_path, "x") as f:  # x = exclusive
@@ -226,16 +183,19 @@ def startup_config() -> bool:
     if creation_result is True:
         # If creation_result is True, we created a new config file with default values.
         # We still need to mark that the parsing stage has been completed.
+        logger.debug("New config file created successfully")
         config_storage = ConfigStorage(parsing_stage_completed=True)
     else:
         # False means there was an existing config file.
         # We must parse it.
+        logger.debug("Existing config file found. Attempting to read...")
         try:
             config_storage = ConfigStorage(read_config_file(), parsing_stage_completed=True)
         except Exception as e:
             e.add_note(f"Error in startup! Couldn't read your config file. See logs for details.")
             core.error_storage.add_error(e)
             return False
+        logger.debug("Config file validated successfully by pydantic")
 
     return True
 
@@ -259,7 +219,7 @@ def read_config_file() -> UserConfig:
     # - error parsing the file (malformed TOML)
     # - error validating the file (malformed values)
 
-    config_dir = _get_dir_following_xdg_spec(XDGDirectory.CONFIG)
+    config_dir = core._get_dir_following_xdg_spec(core.XDGDirectory.CONFIG)
     config_file_path = config_dir / "config.toml"
 
     try:
@@ -268,6 +228,8 @@ def read_config_file() -> UserConfig:
         # Any kind of error trying to read this file is a breaking error.
         core.os_error_logger(e, "read", "config file")
         raise e
+
+    logger.debug(f"Program has permission to read config file at {config_file_path}")
 
     try:
         config_tomldoc = tomlkit.parse(f.read())
@@ -282,6 +244,8 @@ def read_config_file() -> UserConfig:
         e.add_note(f"Error parsing config file at: {config_dir}")
         core.error_storage.add_error(e)
         raise e
+
+    logger.debug("Config file parsed successfully by tomlkit")
 
     validated_config = safely_parse_TOMLDocument(config_tomldoc, UserConfig)
 

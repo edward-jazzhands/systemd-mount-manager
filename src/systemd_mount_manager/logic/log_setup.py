@@ -4,22 +4,20 @@ import logging.handlers as handlers
 import queue
 import atexit
 from dataclasses import dataclass
+import copy
+import time
+import json
+import struct
+import multiprocessing
 
 # import time
 # from threading import Thread
 
 # third party
-from textual.logging import TextualHandler
+# from textual.logging import TextualHandler
 
 # local imports
 import systemd_mount_manager.logic.core as core
-import systemd_mount_manager.logic.config as config
-
-APP_NAME = core.APP_NAME
-
-#! we need to set up a flag somewhere that we can use to know
-# the result of the config startup
-
 
 # This module is loaded before the config startup function is called, because
 # we want logging to be able to keep track of config errors.
@@ -37,28 +35,80 @@ APP_NAME = core.APP_NAME
 # 2. XDG_STATE_HOME env var
 # 3. ~/.local/state
 
+# Set the app name in multiprocessing module.
+# Logging library uses this under the hood to set the processName
+# attribute of the LogRecord object. It seems odd, but that's how it
+# does it, so multiprocessing is already loaded into memory if you're
+# using the logging library.
+multiprocessing.current_process().name = core.APP_NAME
 
-class CustomMemoryHandler(handlers.MemoryHandler):
 
-    def __init__(self, target: logging.Handler):
-        super().__init__(capacity=10, flushLevel=logging.ERROR, target=target, flushOnClose=True)
+# Custom Handlers
+# ==================
 
-        # NOTE: If the target is None, it will never flush the buffer.
-        # The buffer is just a list, but it could end up making the list
-        # grow very large, and that might not be great for performance.
+class CustomMemoryHandler(logging.Handler):
 
-    def shouldFlush(self, record: logging.LogRecord) -> bool:
+    def __init__(self):
+        super().__init__()
+        self.log_list: list[logging.LogRecord] = []
 
-        # NOTE: this method will run in a different thread because its called
-        # by the QueueListener! So that's why we need to worry about thread safety.
-        # (QueueListener thread calls handle -> handle calls emit -> emit calls shouldFlush)
+    def emit(self, record: logging.LogRecord) -> None:
+        self.log_list.append(record)
 
-        # We can't flush until the program has attempted to read the config file.
-        # Once that happens we can start flushing the buffer to the file handler.
-        if not config.config_storage.parsing_stage_completed:
-            return False
+    def get_log_list_copy(self) -> list[logging.LogRecord]:
+        return copy.deepcopy(self.log_list)
 
-        return (len(self.buffer) >= self.capacity) or (record.levelno >= self.flushLevel)
+    def flush(self) -> None:
+        self.acquire()
+        try:
+            self.log_list.clear()
+        finally:
+            self.release()
+
+
+class JsonSocketHandler(handlers.SocketHandler):
+
+    def __init__(self, host: str = "localhost", port: int | None = handlers.DEFAULT_TCP_LOGGING_PORT):
+        """Initializes the handler with a specific host address and port. Default host
+        is 'localhost' and default port is 9020.
+
+        When the attribute *closeOnError* is set to True - if a socket error
+        occurs, the socket is silently closed and then reopened on the next
+        logging call.
+        """
+        super().__init__(host, port)
+
+    # The original method is called makePickle. We need to override it.
+    # We are not actually pickling the object though, we're converting it
+    # to a dictionary and then encoding it to JSON.
+    def makePickle(self, record):
+        
+        # Convert the LogRecord to a dictionary
+        data = record.__dict__.copy()
+        
+        # 2. Handle the Exception/Traceback safely
+        if record.exc_info:
+            # If the record has an exception, we use the formatter to 
+            # turn the traceback object into a JSON-friendly string.
+            formatter = self.formatter if self.formatter else logging.Formatter()
+
+            data['exc_info'] = formatter.formatException(record.exc_info)
+            
+        # 3. Clean up other non-serializable fields (optional but safe)
+        # Some records contain objects that JSON hates. We ensure 'msg' is a string.
+        data['msg'] = record.getMessage()
+
+        # 4. Remove args from the dictionary (optional but safe)
+        # We want to remove args because once getMessage() has been, called the args 
+        # are already baked into msg, so they're redundant and potentially 
+        # carry non-serializable objects.
+        data.pop('args', None)
+            
+        # Encode to JSON and then to bytes
+        s = json.dumps(data).encode('utf-8')
+        
+        # Prefix with 4-byte length (Big-Endian) just like the original
+        return struct.pack(">L", len(s)) + s
 
 
 # Module level cache
@@ -70,7 +120,7 @@ class HandlerStorage:
 
     file_handler: handlers.TimedRotatingFileHandler | None = None
     memory_handler: CustomMemoryHandler | None = None
-    textual_handler: TextualHandler | None = None
+    socket_handler: handlers.SocketHandler | None = None
     queue_handler: handlers.QueueHandler | None = None
 
 
@@ -85,7 +135,7 @@ logger = logging.getLogger()
 def _create_file_handler_safely() -> handlers.TimedRotatingFileHandler | None:
     """ """
 
-    logs_dir = config._get_dir_following_xdg_spec(config.XDGDirectory.STATE)
+    logs_dir = core._get_dir_following_xdg_spec(core.XDGDirectory.STATE)
 
     try:
         logs_dir.mkdir(parents=True, exist_ok=True)
@@ -96,7 +146,7 @@ def _create_file_handler_safely() -> handlers.TimedRotatingFileHandler | None:
         return
     try:
         file_handler = handlers.TimedRotatingFileHandler(
-            f"{logs_dir}/{APP_NAME}.log", when="midnight", interval=1, backupCount=7
+            f"{logs_dir}/{core.APP_NAME}.log", when="midnight", interval=1, backupCount=7
         )
         # valid 'when' events:
         # S - Seconds
@@ -114,7 +164,7 @@ def _create_file_handler_safely() -> handlers.TimedRotatingFileHandler | None:
 
     return file_handler
 
-    # potential config options:
+    #! potential config options:
     # backup count (it goes by day so its how many days to keep - default is 1 week)
     # daily / weekly
 
@@ -140,17 +190,13 @@ def startup_logging() -> bool:
     # Note to future self: Adding new logging integrations should be as simple as
     # importing the handler from some third party library and adding it to the logger.
 
+    # The memory handler stores all log records in memory.
+    memory_handler = CustomMemoryHandler()
+    # Memory handler doesn't use a formatter.
+
     # The file handler is not added until the program has tried to read the config file.
     # But it will still attempt to create the file on this operation:
-    memory_handler = None
     if file_handler := _create_file_handler_safely():
-
-        # The memory handler stores records in memory and periodically flushes
-        # them to the file handler. There's no point in initializing it if
-        # the file handler failed to initialize.
-        memory_handler = CustomMemoryHandler(target=file_handler)
-        # Memory handler doesn't use a formatter.
-        
         formatter_files = logging.Formatter(
             "%(asctime)s - %(threadName)s - %(levelname)s - %(message)s"
         )
@@ -158,12 +204,15 @@ def startup_logging() -> bool:
 
     # Textual handler sends to the Textual dev console (in Textual dev tools).
     # We only add it if we're in dev mode.
-    textual_handler = None
+    # textual_handler = None
+    socket_handler = None
     if dev_mode:
-        textual_handler = TextualHandler(stderr=False)
-        
-        formatter_textual = logging.Formatter("%(message)s")
-        textual_handler.setFormatter(formatter_textual)
+        # textual_handler = TextualHandler(stderr=True)
+        socket_handler = JsonSocketHandler()
+        formatter_dev_consoles = logging.Formatter("%(message)s")
+        # textual_handler.setFormatter(formatter_dev_consoles)
+        socket_handler.setFormatter(formatter_dev_consoles)
+
 
     # The queue handler is the ONLY handler added to the root logger!
     # queue handler does not use a formatter.
@@ -174,7 +223,7 @@ def startup_logging() -> bool:
     _handler_storage = HandlerStorage(
         file_handler,
         memory_handler,
-        textual_handler,
+        socket_handler,
         queue_handler,
     )
 
@@ -189,8 +238,8 @@ def startup_logging() -> bool:
     handlers_list: list[logging.Handler] = []
     if memory_handler:
         handlers_list.append(memory_handler)
-    if textual_handler:
-        handlers_list.append(textual_handler)
+    if socket_handler:
+        handlers_list.append(socket_handler)
 
     listener = handlers.QueueListener(log_queue, *handlers_list, respect_handler_level=True)
 
@@ -203,8 +252,8 @@ def startup_logging() -> bool:
     # Clean up - stop the listener to flush remaining records
     atexit.register(listener.stop)
 
-    # Mark the logger as ready for the error storage
-    core.error_storage.logger = logger
+    # Add the logger to the error storage
+    core.error_storage.add_logger(logger)
 
     # If there was any errors during the logging setup (ie. file handler),
     # we can log them now.
@@ -212,17 +261,17 @@ def startup_logging() -> bool:
         logger.error(str(err))
 
     # if the file handler failed to initialize, we will consider that a failure.
-    # Note that we still want the logger initialized with the QueueHandler, even
-    # if the QueueListener doesn't have any handlers to send the logs to.
+    # Note that we still want the logger initialized with the QueueHandler and
+    # whatever other handlers are available.
     if file_handler is None:
         return False
     else:
         return True
 
 
-def swap_memory_handler_with_file_handler() -> bool:
-    """Swap the memory handler with the file handler. If there is no file handler
-    to swap in, this will do nothing and then return False.
+def add_file_handler_to_logger() -> bool:
+    """Add the file handler to the logger. If there is no file handler
+    to add, this will do nothing and then return False.
     
     Returns:
         bool: True if the swap was successful, False if it failed.
@@ -231,8 +280,12 @@ def swap_memory_handler_with_file_handler() -> bool:
     # This will only be allowed if the file handler was initialized successfully.
     if _handler_storage.file_handler:
         logger.addHandler(_handler_storage.file_handler)
-        if _handler_storage.memory_handler:  # logically this should never be None here
-            logger.removeHandler(_handler_storage.memory_handler)   
+
+        # Now we need to check for any logs that were stored in the memory handler.
+        # This should effectively catch up the file handler to the latest log.
+        if _handler_storage.memory_handler:
+            for log in _handler_storage.memory_handler.get_log_list_copy():
+                _handler_storage.file_handler.handle(log)
         return True
     else:
         return False
